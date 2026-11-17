@@ -33,12 +33,10 @@ import {
   X,
   Clock3
 } from 'lucide-react'
+import { loadReports, loadTeam, type ReportRow, type Shift, type Staff } from './lib/report-data'
 
-type Shift = 'morning' | 'day' | 'night'
 type ProfileReport = { startingBalance: string; endingBalance: string; sales: string; customers: string; leads: string }
 type Page = 'dashboard' | 'report' | 'history' | 'analytics' | 'calendar' | 'team'
-type Staff = { id: string; display_name: string; role: string }
-type ReportRow = { id: string; staff_id: string; report_date: string; shift_type: Shift; created_at: string; updated_at: string; alice_start_balance: number | null; alice_end_balance: number | null; alice_sales: number | null; alice_customers: number | null; alice_leads: number | null; alexa_start_balance: number | null; alexa_end_balance: number | null; alexa_sales: number | null; alexa_customers: number | null; alexa_leads: number | null }
 const shiftLabels: Record<Shift, string> = { morning: '🌅 Утренняя', day: '☀️ Дневная', night: '🌙 Ночная' }
 const money = (n: number): string =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
@@ -329,8 +327,10 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
   const [saving, setSaving] = useState(false)
   const [staff, setStaff] = useState<Staff | null>(null)
   const [profileAttempt, setProfileAttempt] = useState(0)
-  const [team, setTeam] = useState<Staff[]>([])
-  const [reports, setReports] = useState<ReportRow[]>([])
+  const [{ reports, team }, setWorkspaceData] = useState<{ reports: ReportRow[]; team: Staff[] }>({
+    reports: [],
+    team: []
+  })
   const [fetching, setFetching] = useState(false)
   const [dataError, setDataError] = useState('')
   const [period, setPeriod] = useState<'7' | '30' | 'month' | 'all'>('month')
@@ -346,7 +346,7 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
   const [auditError, setAuditError] = useState('')
   const [showAudit, setShowAudit] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
-  const refreshRequest = useRef(0)
+  const refreshRequest = useRef<AbortController | null>(null)
   const auditRequest = useRef(0)
   const savePending = useRef(false)
   const isLeader = staff?.role === 'leader'
@@ -354,39 +354,31 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
   const refreshData = useCallback(
     async (role: string): Promise<void> => {
       if (signal.aborted) return
-      const request = ++refreshRequest.current
-      const isCurrent = (): boolean => !signal.aborted && request === refreshRequest.current
+      refreshRequest.current?.abort()
+      const request = new AbortController()
+      refreshRequest.current = request
+      const isCurrent = (): boolean =>
+        !signal.aborted && !request.signal.aborted && refreshRequest.current === request
       setFetching(true)
       setDataError('')
       try {
         const isBoss = role === 'leader'
-        const reportsQuery = supabase
-          .from('shift_reports')
-          .select('*')
-          .order('report_date', { ascending: false })
-          .limit(2000)
-        const [reportsResult, teamResult] = await Promise.all([
-          sessionRequest(scope, isBoss ? reportsQuery : reportsQuery.eq('staff_id', userId)),
-          isBoss
-            ? sessionRequest(
-                scope,
-                supabase.from('staff').select('id,display_name,role').order('display_name')
-              )
-            : null
+        const [reports, team] = await Promise.all([
+          loadReports(supabase, scope, isBoss, request.signal),
+          isBoss ? loadTeam(supabase, scope, request.signal) : []
         ])
-        if (!isCurrent()) return
-        const { data, error: err } = reportsResult
-        if (err) throw err
-        setReports((data ?? []) as ReportRow[])
-        if (teamResult?.error) throw teamResult.error
-        setTeam((teamResult?.data ?? []) as Staff[])
+        if (isCurrent()) setWorkspaceData({ reports, team })
       } catch (err) {
         if (isCurrent()) setDataError(err instanceof Error ? err.message : String(err))
       } finally {
-        if (isCurrent()) setFetching(false)
+        if (isCurrent()) {
+          refreshRequest.current = null
+          setFetching(false)
+        }
+        request.abort()
       }
     },
-    [scope, signal, userId]
+    [scope, signal]
   )
 
   useEffect(() => {
@@ -607,7 +599,7 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
         supabase.from('staff').select('id').eq('id', staffId)
       ).maybeSingle()
       if (signal.aborted) return
-      if (staffError) throw staffError
+      if (staffError) throw new Error(staffError.message)
       if (!targetStaff) throw new Error('Сотрудник не найден в таблице staff.')
 
       if (editing && staffId !== userId && !isLeader)
@@ -649,7 +641,7 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
         supabase.from('shift_reports').select('id').eq('staff_id', staffId).eq('report_date', date)
       ).maybeSingle()
       if (signal.aborted) return
-      if (lookupError) throw lookupError
+      if (lookupError) throw new Error(lookupError.message)
 
       if (existing) {
         const confirmed = window.confirm(
@@ -670,7 +662,7 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
             .select('id')
         ).single()
         if (signal.aborted) return
-        if (updateError) throw updateError
+        if (updateError) throw new Error(updateError.message)
         if (!updated) throw new Error('Не удалось подтвердить обновление отчёта.')
         setMessage('Отчёт успешно обновлён в Supabase!')
       } else {
@@ -684,7 +676,7 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
             throw new Error(
               'Отчёт за эту дату уже создан. Нажми «Сохранить отчёт» ещё раз, чтобы предложить обновление.'
             )
-          throw insertError
+          throw new Error(insertError.message)
         }
         if (!inserted) throw new Error('Не удалось подтвердить сохранение отчёта.')
         setMessage('Отчёт успешно сохранён в Supabase!')
