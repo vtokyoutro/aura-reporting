@@ -1,9 +1,18 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
 function createWindow(): void {
+  const rendererFile = join(__dirname, '../renderer/index.html')
+  const devUrl = is.dev ? URL.parse(process.env['ELECTRON_RENDERER_URL'] ?? '') : null
+  const rendererUrl =
+    devUrl?.protocol === 'http:' || devUrl?.protocol === 'https:'
+      ? devUrl
+      : pathToFileURL(rendererFile)
+  const rendererDocument = rendererUrl.href.split('#', 1)[0]
+
   // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 900,
@@ -12,8 +21,10 @@ function createWindow(): void {
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      devTools: is.dev
     }
   })
 
@@ -21,17 +32,23 @@ function createWindow(): void {
     mainWindow.show()
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
+  const { webContents } = mainWindow
+  webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  webContents.on('will-frame-navigate', (event) => {
+    if (!event.isMainFrame || event.url.split('#', 1)[0] !== rendererDocument) {
+      event.preventDefault()
+    }
+  })
+  webContents.on('will-redirect', (event) => event.preventDefault())
+  webContents.session.setPermissionCheckHandler(() => false)
+  webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => {
+    callback(false)
   })
 
-  // HMR for renderer base on electron-vite cli.
-  // Load the remote URL for development or the local html file for production.
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  if (rendererUrl.protocol === 'file:') {
+    mainWindow.loadFile(rendererFile)
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadURL(rendererUrl.href)
   }
 }
 
@@ -48,9 +65,6 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
-
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
 
   createWindow()
 
