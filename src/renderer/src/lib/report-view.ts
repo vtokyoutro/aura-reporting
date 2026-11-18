@@ -69,7 +69,7 @@ export function indexReportsByDate(reports: ReportRow[], person: string): Map<st
 }
 
 function escapeSpreadsheetFormula(value: string): string {
-  return /^(?:[\t\r\n]|\s*[-=+@])/.test(value) ? `'${value}` : value
+  return /^(?:[\t\r\n]|\s*[-=+@－＝＋＠])/.test(value) ? `'${value}` : value
 }
 
 export function createReportsCsv(rows: ReportRow[], nameOf: (staffId: string) => string): string {
@@ -90,8 +90,8 @@ export function createReportsCsv(rows: ReportRow[], nameOf: (staffId: string) =>
   ]
   const lines = rows.map((row) =>
     [
-      row.report_date,
-      row.shift_type,
+      escapeSpreadsheetFormula(row.report_date),
+      escapeSpreadsheetFormula(row.shift_type),
       escapeSpreadsheetFormula(nameOf(row.staff_id)),
       row.alice_start_balance,
       row.alice_end_balance,
