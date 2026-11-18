@@ -5,11 +5,10 @@
   --dash-muted: #b9b3c7;
   --dash-line: rgb(225 216 248 / 12%);
   --dash-radius: 22px;
+  container: dashboard / inline-size;
   display: grid;
-  gap: clamp(19px, 2.6vw, 34px);
-  max-inline-size: 1480px;
+  gap: clamp(16px, 2.1vw, 30px);
   min-inline-size: 0;
-  margin-inline: auto;
   color: var(--dash-ink);
 }
 
@@ -25,10 +24,11 @@
   min-inline-size: 0;
 }
 .aurora h1 {
-  font-size: clamp(30px, 4vw, 52px);
-  font-weight: 620;
-  line-height: 1.03;
-  letter-spacing: -0.055em;
+  font-size: clamp(29px, 3.5cqw, 46px);
+  font-weight: 590;
+  line-height: 1.1;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
 }
 .aurora-date {
   display: flex;
@@ -42,6 +42,7 @@
   margin-block-start: 8px;
   color: var(--dash-muted);
   overflow-wrap: anywhere;
+  max-inline-size: 60ch;
 }
 .aurora-filters {
   display: flex;
@@ -73,7 +74,7 @@
 }
 .aurora-period button[aria-pressed='true'] {
   color: var(--dash-ink);
-  font-weight: 700;
+  font-weight: 610;
 }
 .aurora-period-active {
   position: absolute;
@@ -109,15 +110,15 @@
 
 .aurora-main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.26fr) minmax(270px, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: clamp(12px, 1.6cqw, 23px);
 }
 .aurora-hero {
   position: relative;
   isolation: isolate;
   display: flex;
   min-inline-size: 0;
-  min-block-size: clamp(270px, 30vw, 348px);
+  min-block-size: clamp(250px, 28cqw, 358px);
   flex-direction: column;
   padding: clamp(20px, 2.8vw, 37px);
   overflow: hidden;
@@ -148,8 +149,8 @@
   color: var(--dash-lavender);
 }
 .aurora h2 {
-  font-size: clamp(16px, 1.55vw, 20px);
-  font-weight: 650;
+  font-size: clamp(16px, 1.5cqw, 20px);
+  font-weight: 590;
   line-height: 1.25;
   letter-spacing: -0.025em;
 }
@@ -159,10 +160,10 @@
   min-block-size: 1.06em;
   margin-block: auto;
   color: var(--dash-ink);
-  font-size: clamp(50px, 8vw, 117px);
+  font-size: clamp(51px, 7.6cqw, 104px);
   font-weight: 560;
   line-height: 1;
-  letter-spacing: -0.087em;
+  letter-spacing: -0.06em;
 }
 .aurora-placeholder {
   display: block;
@@ -221,19 +222,19 @@
 }
 .aurora-shifts dd {
   font-size: 1.18rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .aurora-models {
   display: grid;
   grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: clamp(9px, 1.05cqw, 15px);
   min-inline-size: 0;
 }
 .aurora-model {
   --model-tone: var(--dash-lavender);
   min-inline-size: 0;
-  padding: 12px clamp(14px, 1.9vw, 25px);
+  padding: 9px clamp(12px, 1.75cqw, 24px) 13px;
   border-radius: var(--dash-radius);
   background: linear-gradient(120deg, #251e32, #201b28 75%);
 }
@@ -243,9 +244,9 @@
 }
 .aurora-model section {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(64px, auto);
-  column-gap: 14px;
-  align-items: baseline;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 5px clamp(10px, 1.35cqw, 19px);
+  align-items: center;
 }
 .aurora-model-title {
   display: flex;
@@ -284,55 +285,91 @@
 .aurora-link:hover {
   background: rgb(215 207 239 / 9%);
 }
-.aurora-model-balance {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.aurora-model-kpi {
+  display: grid;
+  gap: 3px;
   min-inline-size: 0;
+}
+.aurora-model-balance {
   color: var(--model-tone);
-}
-.aurora-model-balance svg {
-  flex: none;
-}
-.aurora-model-balance strong {
-  font-size: clamp(20px, 2.45vw, 37px);
-  font-weight: 610;
+  font-size: clamp(19px, 2.35cqw, 34px);
+  font-weight: 590;
   line-height: 1.05;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.035em;
   overflow-wrap: anywhere;
 }
-.aurora-model p {
-  grid-column: 1;
+.aurora-model-kpi p {
   color: var(--dash-muted);
-  font-size: 0.76rem;
+  font-size: 0.81rem;
+}
+.aurora-sparkline {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  min-inline-size: 0;
+  min-block-size: 48px;
+}
+.aurora-sparkline svg {
+  display: block;
+  inline-size: 100%;
+  block-size: clamp(30px, 3.3cqw, 48px);
+  overflow: visible;
+}
+.aurora-sparkline-zero {
+  stroke: rgb(238 232 248 / 35%);
+  stroke-dasharray: 2.5 3;
+  vector-effect: non-scaling-stroke;
+}
+.aurora-sparkline-line {
+  stroke: var(--model-tone);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.aurora-sparkline-point {
+  fill: var(--model-tone);
+}
+.aurora-sparkline figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1px 8px;
+  font-variant-numeric: tabular-nums;
+}
+.aurora-sparkline figcaption,
+.aurora-sparkline-empty {
+  color: var(--dash-muted);
+  font-size: 0.8rem;
+}
+.aurora-sparkline-empty {
+  border-block-end: 1px dashed var(--dash-line);
 }
 .aurora-model dl {
   display: grid;
-  grid-column: 2;
-  grid-row: 2 / 4;
-  gap: 3px;
-  margin-inline-start: auto;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px 10px;
+  margin-block-start: 5px;
 }
 .aurora-model dl div {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
   gap: 3px 7px;
 }
 .aurora-model dt {
   color: var(--dash-muted);
-  font-size: 0.73rem;
+  font-size: 0.81rem;
 }
 .aurora-model dd {
   color: var(--dash-ink);
   font-size: 0.83rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .aurora-lower-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(220px, 0.8fr);
-  gap: 12px;
+  gap: clamp(12px, 1.6cqw, 23px);
   align-items: start;
 }
 .aurora-recent,
@@ -403,9 +440,9 @@
 }
 .aurora-today-value strong {
   color: var(--dash-ink);
-  font-size: 2.65rem;
+  font-size: clamp(1.9rem, 3cqw, 2.65rem);
   font-weight: 570;
-  letter-spacing: -0.07em;
+  letter-spacing: -0.045em;
 }
 .aurora-disclosure {
   color: var(--dash-muted);
@@ -425,23 +462,13 @@
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 1040px) {
-  .aurora-model section {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .aurora-model dl {
-    grid-column: 1;
-    grid-row: auto;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 9px;
-    margin: 4px 0 0;
-  }
+@container dashboard (max-width: 980px) {
   .aurora-model dl div {
     display: grid;
     gap: 0;
   }
 }
-@media (max-width: 730px) {
+@container dashboard (max-width: 740px) {
   .aurora-main-grid,
   .aurora-lower-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -454,7 +481,7 @@
     min-block-size: 230px;
   }
 }
-@media (max-width: 475px) {
+@container dashboard (max-width: 520px) {
   .aurora-models {
     grid-template-columns: minmax(0, 1fr);
   }

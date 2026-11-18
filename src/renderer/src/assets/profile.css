@@ -1,0 +1,118 @@
+.aura-profile {
+  position: relative;
+  min-inline-size: 0;
+}
+
+.aura-user-avatar {
+  overflow: hidden;
+  flex: none;
+}
+
+.aura-user-avatar img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.aura-profile-trigger {
+  min-block-size: 44px;
+  padding: 4px 7px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--text);
+  text-align: start;
+}
+
+@media (min-width: 1000px) {
+  .topbar-profile.aura-profile-trigger {
+    max-inline-size: 245px;
+  }
+}
+
+.aura-profile-trigger:hover,
+.aura-profile-trigger[aria-expanded='true'] {
+  border-color: var(--line);
+  background: var(--surface-raised);
+}
+
+.aura-profile-chevron {
+  flex: none;
+  color: var(--muted);
+}
+
+.aura-profile-anchor {
+  position: absolute;
+  z-index: 4;
+  inset: calc(100% + 8px) 0 auto auto;
+}
+
+.aura-profile-popover {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 190px;
+  padding: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--surface-raised);
+}
+
+.aura-profile-popover button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-block-size: 44px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.aura-profile-popover button:hover {
+  background: var(--shell);
+}
+
+.aura-profile-settings {
+  display: grid;
+  gap: 14px;
+  min-inline-size: 0;
+}
+
+.aura-avatar-preview {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  overflow-wrap: anywhere;
+}
+
+.aura-avatar-preview .avatar {
+  inline-size: 76px;
+  block-size: 76px;
+  font-size: 1.35rem;
+}
+
+.aura-avatar-preview p {
+  color: var(--muted);
+}
+
+.aura-profile-notice,
+.aura-profile-error {
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: var(--surface-raised);
+}
+
+.aura-profile-notice {
+  color: var(--muted);
+}
+.aura-profile-error {
+  color: var(--error);
+}
+
+@media (max-width: 510px) {
+  .aura-profile-chevron {
+    display: none;
+  }
+}

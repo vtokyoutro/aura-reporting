@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import {
   Activity,
-  ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
   CalendarDays,
@@ -67,7 +66,90 @@ const shifts = [
 ] satisfies { value: Shift; label: string; full: string }[]
 
 const integerFormat = new Intl.NumberFormat('ru-RU')
+const shortDateFormat = new Intl.DateTimeFormat('ru-RU', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC'
+})
 const models: ModelName[] = ['alice', 'alexa']
+const sparklineDayLimit = 14
+
+type BalanceDay = { date: string; time: number; alice: number; alexa: number }
+
+function BalanceSparkline({
+  days,
+  model,
+  label,
+  loading
+}: {
+  days: BalanceDay[]
+  model: ModelName
+  label: string
+  loading: boolean
+}): JSX.Element {
+  const validDays = days.filter((day) => Number.isFinite(day[model]))
+  const first = validDays[0]
+  const last = validDays[validDays.length - 1]
+  if (loading || !first || !last) {
+    return (
+      <div className="aurora-sparkline aurora-sparkline-empty">
+        <span>{loading ? 'Загружаем динамику…' : 'Нет данных для графика'}</span>
+      </div>
+    )
+  }
+
+  const values = validDays.map((day) => day[model])
+  const minimum = Math.min(...values)
+  const maximum = Math.max(...values)
+  const low = Math.min(0, minimum)
+  const high = Math.max(0, maximum)
+  const span = last.time - first.time
+  const toY = (value: number): number =>
+    high === low ? 20 : 35 - ((value - low) / (high - low)) * 30
+  const points = validDays.map((day) => ({
+    x: span === 0 ? 80 : 4 + ((day.time - first.time) / span) * 152,
+    y: toY(day[model])
+  }))
+  const latestPoint = points[points.length - 1]
+  const line = points.map(({ x, y }) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ')
+  const summary =
+    first === last
+      ? `${dateLabel(last.date)}: ${money(last[model])}`
+      : `${dateLabel(first.date)}: ${money(first[model])}. ${dateLabel(last.date)}: ${money(last[model])}. Минимум ${money(minimum)}, максимум ${money(maximum)}. Дней с отчётами: ${validDays.length}`
+
+  return (
+    <figure className="aurora-sparkline">
+      <svg
+        viewBox="0 0 160 40"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={`${label}: изменение баланса по дням. ${summary}`}
+      >
+        <line x1="0" x2="160" y1={toY(0)} y2={toY(0)} className="aurora-sparkline-zero" />
+        {points.length > 1 && (
+          <polyline
+            points={line}
+            fill="none"
+            className="aurora-sparkline-line"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+        <circle cx={latestPoint.x} cy={latestPoint.y} r="2.4" className="aurora-sparkline-point">
+          <title>
+            {dateLabel(last.date)}: {money(last[model])}
+          </title>
+        </circle>
+      </svg>
+      <figcaption aria-hidden="true">
+        <span>По дням</span>
+        <span>
+          {shortDateFormat.format(first.time)}
+          {first !== last && ` — ${shortDateFormat.format(last.time)}`}
+        </span>
+      </figcaption>
+    </figure>
+  )
+}
 
 function ReportCount({ value }: { value: number }): JSX.Element {
   const reduce = useReducedMotion()
@@ -122,6 +204,21 @@ export function DashboardView({
     () => [...new Set(todayReports.map((row) => row.staff_id))],
     [todayReports]
   )
+  const balanceDays = useMemo(() => {
+    const byDate = new Map<string, BalanceDay>()
+    for (const row of rows) {
+      let day = byDate.get(row.report_date)
+      if (!day) {
+        const time = Date.parse(`${row.report_date}T00:00:00Z`)
+        if (!Number.isFinite(time)) continue
+        day = { date: row.report_date, time, alice: 0, alexa: 0 }
+        byDate.set(row.report_date, day)
+      }
+      day.alice += revenue(row, 'alice')
+      day.alexa += revenue(row, 'alexa')
+    }
+    return [...byDate.values()].sort((a, b) => a.time - b.time).slice(-sparklineDayLimit)
+  }, [rows])
 
   return (
     <div className="aurora">
@@ -226,7 +323,6 @@ export function DashboardView({
           {models.map((model, index) => {
             const label = model === 'alice' ? 'Alice' : 'Alexa'
             const balance = rows.reduce((total, row) => total + revenue(row, model), 0)
-            const Direction = balance < 0 ? ArrowDownRight : ArrowUpRight
             return (
               <MotionCard
                 key={model}
@@ -244,11 +340,18 @@ export function DashboardView({
                       <ArrowUpRight size={18} aria-hidden="true" />
                     </MotionButton>
                   </div>
-                  <div className="aurora-model-balance">
-                    {!loading && <Direction size={19} aria-hidden="true" />}
-                    <strong className="number">{loading ? '—' : money(balance)}</strong>
+                  <div className="aurora-model-kpi">
+                    <p>Изменение баланса</p>
+                    <strong className="aurora-model-balance number">
+                      {loading ? '—' : money(balance)}
+                    </strong>
                   </div>
-                  <p>Изменение баланса</p>
+                  <BalanceSparkline
+                    days={balanceDays}
+                    model={model}
+                    label={label}
+                    loading={loading}
+                  />
                   <dl>
                     <div>
                       <dt>Продажи</dt>

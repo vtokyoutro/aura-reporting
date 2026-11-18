@@ -337,6 +337,9 @@ html:has(.aura-shell) {
   margin-inline: auto;
   padding-inline: clamp(16px, 3vw, 42px);
 }
+.workspace-topbar-wide .workspace-topbar-inner {
+  max-inline-size: 1840px;
+}
 .topbar-section {
   min-inline-size: 0;
   overflow: hidden;
@@ -387,6 +390,7 @@ html:has(.aura-shell) {
   outline: none;
 }
 .workspace-dashboard {
+  max-width: 1840px;
   padding-block-start: clamp(16px, 2.8vw, 34px);
 }
 .aura-section-transition {

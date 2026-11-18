@@ -37,6 +37,7 @@ import {
 } from 'lucide-react'
 import { loadReports, loadTeam, type ReportRow, type Shift, type Staff } from './lib/report-data'
 import { DashboardView } from './components/DashboardView'
+import { ProfileMenu, UserAvatar } from './components/ProfileMenu'
 import ModelAnalytics from './components/ModelAnalytics'
 import {
   MotionProvider,
@@ -520,11 +521,15 @@ function ReportTable({
 function TeamDirectory({
   team,
   rows,
+  currentUser,
+  avatar,
   onOpen,
   onAnalyze
 }: {
   team: Staff[]
   rows: ReportRow[]
+  currentUser: string
+  avatar: string | null
   onOpen: (id: string) => void
   onAnalyze: (id: string) => void
 }): JSX.Element {
@@ -555,9 +560,10 @@ function TeamDirectory({
             return (
               <li key={member.id} className="panel team-member">
                 <div className="team-identity">
-                  <span className="avatar" aria-hidden="true">
-                    {memberName.slice(0, 1).toUpperCase()}
-                  </span>
+                  <UserAvatar
+                    name={memberName}
+                    avatar={member.id === currentUser ? avatar : null}
+                  />
                   <div>
                     <h3>{memberName}</h3>
                     <span className="role-pill">
@@ -621,6 +627,7 @@ function Workspace({
   const userId = scope.userId
   const signal = scope.controller.signal
   const draftKey = `aura-draft-v05-${userId}`
+  const [avatar, setAvatar] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [page, setPage] = useState<Page>('dashboard')
   const [date, setDate] = useState(today)
@@ -1142,29 +1149,12 @@ function Workspace({
       </aside>
 
       <div className="workspace-frame">
-        <header className="workspace-topbar">
+        <header
+          className={`workspace-topbar${page === 'dashboard' ? ' workspace-topbar-wide' : ''}`}
+        >
           <div className="workspace-topbar-inner">
             <span className="topbar-section">{page === 'dashboard' ? 'Главная' : title}</span>
             <div className="topbar-actions">
-              <div className="topbar-profile" title={personName}>
-                <span className="avatar" aria-hidden="true">
-                  {personName.slice(0, 1).toUpperCase()}
-                </span>
-                <span className="account-label">
-                  <strong title={personName}>{personName}</strong>
-                  <span>{roleName}</span>
-                </span>
-              </div>
-              <button
-                type="button"
-                className="button button-quiet icon-button logout-button"
-                aria-label="Выйти"
-                title="Выйти"
-                onClick={handleLogout}
-              >
-                <LogOut size={18} aria-hidden="true" />
-                <span className="sr-only">Выйти</span>
-              </button>
               {page !== 'report' && (
                 <>
                   <MotionButton
@@ -1193,6 +1183,14 @@ function Workspace({
                   </MotionButton>
                 </>
               )}
+              <ProfileMenu
+                scope={scope}
+                name={personName}
+                role={roleName}
+                avatar={avatar}
+                onAvatarChange={setAvatar}
+                onLogout={handleLogout}
+              />
             </div>
           </div>
         </header>
@@ -1387,6 +1385,8 @@ function Workspace({
                 <TeamDirectory
                   team={team}
                   rows={filtered}
+                  currentUser={userId}
+                  avatar={avatar}
                   onOpen={openMemberHistory}
                   onAnalyze={openMemberAnalytics}
                 />

@@ -8,6 +8,7 @@ files:
   - '!.codex{,/**}'
   - '!AGENTS.md'
   - '!tests{,/**}'
+  - '!docs/avatar-storage-review.{md,sql}'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'

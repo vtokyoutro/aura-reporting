@@ -239,7 +239,7 @@ function setup() {
   }
 
   const dependencies = {
-    react: harness.hooks,
+    react: { ...harness.hooks, useId: () => 'test-profile-id' },
     'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'fragment' },
     'lucide-react': new Proxy({}, { get: (_target, name) => name }),
     'motion/react': {
@@ -270,7 +270,11 @@ function setup() {
 
   function loadModule(path) {
     if (modules.has(path.href)) return modules.get(path.href)
-    const { outputText } = ts.transpileModule(readFileSync(path, 'utf8'), {
+    const source = readFileSync(path, 'utf8')
+    const content = path.pathname.endsWith('/ProfileMenu.tsx')
+      ? source.replaceAll('import.meta.env', '({})')
+      : source
+    const { outputText } = ts.transpileModule(content, {
       compilerOptions: {
         module: ts.ModuleKind.CommonJS,
         jsx: ts.JsxEmit.ReactJSX,
