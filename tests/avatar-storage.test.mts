@@ -79,7 +79,11 @@ test('uses private UID-scoped paths and the active token on each request', async
   assert.deepEqual(
     requests.map(({ url, init }) => [init?.method ?? 'GET', url.origin, url.pathname]),
     [
-      ['GET', endpoint, prefix + '/' + firstId + '/avatar.webp'],
+      [
+        'GET',
+        endpoint,
+        '/storage/v1/object/authenticated/staff-avatars/' + firstId + '/avatar.webp'
+      ],
       ['POST', endpoint, prefix + '/' + secondId + '/avatar.webp'],
       ['DELETE', endpoint, prefix]
     ]
@@ -108,6 +112,55 @@ test('returns null for an absent private avatar and reports access errors', asyn
   assert.equal(await storage.load(scope(firstId)), null)
   status = 403
   await assert.rejects(storage.load(scope(firstId)))
+})
+
+test('reads another UID with the viewer token while writes remain scoped to the viewer', async () => {
+  const requests: { url: string; init?: RequestInit }[] = []
+  const storage = createAvatarStorage(endpoint, apiKey, async (url, init) => {
+    requests.push({ url: String(url), init })
+    if (init?.method === 'DELETE') return Response.json([{ name: firstId + '/avatar.webp' }])
+    return new Response(image)
+  })
+  const viewer = scope(firstId)
+  await storage.load(viewer, secondId)
+  await storage.save(viewer, image)
+  await storage.remove(viewer)
+  assert.ok(
+    requests[0].url.endsWith('/object/authenticated/staff-avatars/' + secondId + '/avatar.webp')
+  )
+  assert.equal(
+    new Headers(requests[0].init?.headers).get('authorization'),
+    'Bearer fixture-first-token'
+  )
+  assert.ok(requests[1].url.endsWith('/staff-avatars/' + firstId + '/avatar.webp'))
+  assert.deepEqual(JSON.parse(String(requests[2].init?.body)), {
+    prefixes: [firstId + '/avatar.webp']
+  })
+  await assert.rejects(storage.load(viewer, '../' + secondId))
+  assert.equal(requests.length, 3)
+})
+
+test('handles missing, denied, malformed and network responses without inventing absence', async () => {
+  for (const status of [401, 403]) {
+    const storage = createAvatarStorage(endpoint, apiKey, async () =>
+      Response.json({ code: 'NoSuchKey' }, { status })
+    )
+    await assert.rejects(storage.load(scope(firstId)))
+  }
+  for (const payload of [null, [], { code: 'AccessDenied' }, { message: 'Object not found' }]) {
+    const storage = createAvatarStorage(endpoint, apiKey, async () =>
+      Response.json(payload, { status: 400 })
+    )
+    await assert.rejects(storage.load(scope(firstId)))
+  }
+  const missing = createAvatarStorage(endpoint, apiKey, async () =>
+    Response.json({ code: 'NoSuchKey' }, { status: 400 })
+  )
+  assert.equal(await missing.load(scope(firstId)), null)
+  const broken = createAvatarStorage(endpoint, apiKey, async () => {
+    throw new Error('offline')
+  })
+  await assert.rejects(broken.load(scope(firstId)))
 })
 
 test('rejects invalid account paths and unacknowledged deletes', async () => {

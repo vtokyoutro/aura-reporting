@@ -5,3 +5,16 @@ out
 .eslintcache
 *.log*
 .env
+.env.*
+!.env.example
+
+# Local agent setup and live acceptance data are not release source.
+/.agents/
+/.codex/agents/
+/.codex/config.toml
+/AGENTS.md
+/tests/avatar-acceptance/
+/docs/avatar-acceptance-local.md
+*.pem
+*.p12
+*.pfx

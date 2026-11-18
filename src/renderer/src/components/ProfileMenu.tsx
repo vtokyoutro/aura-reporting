@@ -3,14 +3,10 @@ import { ChevronDown, ImagePlus, LogOut, Settings, Trash2 } from 'lucide-react'
 import { AnimatePresence, useReducedMotion } from 'motion/react'
 import * as m from 'motion/react-m'
 import { avatarDataUrl, prepareAvatar } from '../lib/avatar-image'
-import { createAvatarStorage, type AvatarScope } from '../lib/avatar-storage'
+import type { AvatarScope } from '../lib/avatar-storage'
+import { avatarStorage as storage } from '../lib/avatar-client'
 import { MotionButton, MotionDialog } from './WorkspaceMotion'
 import '../assets/profile.css'
-
-const storage =
-  import.meta.env.VITE_AVATAR_STORAGE_ENABLED === 'true'
-    ? createAvatarStorage(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY)
-    : null
 
 type Preview = { image: Blob; source: string }
 

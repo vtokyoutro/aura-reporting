@@ -143,7 +143,7 @@ function hookHarness() {
   }
 }
 
-function setup() {
+function setup(avatarStorage = null) {
   const harness = hookHarness()
   const requests = []
   const attempts = []
@@ -271,7 +271,7 @@ function setup() {
   function loadModule(path) {
     if (modules.has(path.href)) return modules.get(path.href)
     const source = readFileSync(path, 'utf8')
-    const content = path.pathname.endsWith('/ProfileMenu.tsx')
+    const content = path.pathname.endsWith('/avatar-client.ts')
       ? source.replaceAll('import.meta.env', '({})')
       : source
     const { outputText } = ts.transpileModule(content, {
@@ -290,6 +290,12 @@ function setup() {
         const url = new URL(name, path)
         assert.ok(url.href.startsWith(workspace.href), 'Import outside test workspace: ' + name)
         if (url.pathname.endsWith('.css')) return {}
+        if (url.pathname.endsWith('/lib/avatar-client')) return { avatarStorage }
+        if (avatarStorage && url.pathname.endsWith('/lib/avatar-image'))
+          return {
+            prepareAvatar: async (file) => file,
+            avatarDataUrl: async (image) => image.source
+          }
         if (url.pathname.endsWith('/lib/supabase')) return dependencies['./lib/supabase']
         if (url.pathname.endsWith('/components/WorkspaceMotion')) return motionComponents
         const module = [url, new URL(url.href + '.tsx'), new URL(url.href + '.ts')].find(
@@ -367,6 +373,9 @@ function setup() {
     render(element) {
       return harness.render(element.key ?? element.type.name, element)
     },
+    unmount(id) {
+      harness.unmount(id)
+    },
     dispose() {
       harness.unmount('app')
       assert.equal(unsubscribed, true)
@@ -377,6 +386,109 @@ function setup() {
 function session(userId, token = userId + '-token') {
   return { user: { id: userId, email: userId + '@example.invalid' }, access_token: token }
 }
+
+test('late avatar GET after sign-out cannot overwrite the next account avatar', async () => {
+  const reads = []
+  const app = setup({
+    load: (scope) => {
+      const response = deferred()
+      reads.push({ scope, response })
+      return response.promise
+    }
+  })
+  const first = await startProfile(app, 'first', 'leader')
+  const profileA = named(app.render(first.workspaceElement), 'ProfileMenu')
+  app.render({ ...profileA, key: 'profile-a' })
+  app.emit('SIGNED_OUT')
+  assert.equal(reads[0].scope.controller.signal.aborted, true)
+  const second = await startProfile(app, 'second', 'chatter')
+  const profileB = named(app.render(second.workspaceElement), 'ProfileMenu')
+  app.render({ ...profileB, key: 'profile-b' })
+  reads[1].response.resolve({ source: 'data:new-account' })
+  await turn()
+  reads[0].response.resolve({ source: 'data:old-account' })
+  await turn()
+  assert.equal(
+    named(app.render(second.workspaceElement), 'ProfileMenu').props.avatar,
+    'data:new-account'
+  )
+  app.dispose()
+})
+
+for (const action of ['save', 'remove']) {
+  test(`late CDN avatar GET cannot undo successful ${action}`, async () => {
+    const response = deferred()
+    const app = setup({
+      load: () => response.promise,
+      save: async () => {},
+      remove: async () => {}
+    })
+    const account = await startProfile(app, 'owner', 'leader')
+    let value = 'data:original'
+    const profile = {
+      ...named(app.render(account.workspaceElement), 'ProfileMenu'),
+      key: 'race-profile'
+    }
+    profile.props = {
+      ...profile.props,
+      avatar: value,
+      onAvatarChange: (next) => {
+        value = next
+      }
+    }
+    let view = app.render(profile)
+    if (action === 'save') {
+      find(view, (node) => node.type === 'input' && node.props.type === 'file').props.onChange({
+        currentTarget: { files: [{ source: 'data:replacement' }], value: 'fixture' }
+      })
+      await turn()
+      view = app.render(profile)
+      button(view, 'Сохранить').props.onClick()
+    } else {
+      app.prepareConfirmation(() => true)
+      button(view, 'Удалить').props.onClick()
+    }
+    await turn()
+    assert.equal(value, action === 'save' ? 'data:replacement' : null)
+    response.resolve({ source: 'data:stale-cdn-bytes' })
+    await turn()
+    assert.equal(value, action === 'save' ? 'data:replacement' : null)
+    app.dispose()
+  })
+}
+
+test('unmounting team directory cancels its reads and discards late results after reopening', async () => {
+  const reads = []
+  const app = setup({
+    load: (scope, target) => {
+      const response = deferred()
+      reads.push({ scope, target, response })
+      return response.promise
+    }
+  })
+  const account = await startProfile(app, 'leader', 'leader')
+  account.dataRequests
+    .find((entry) => entry.table === 'staff')
+    .complete([{ id: 'member', display_name: 'Member', role: 'chatter' }])
+  account.dataRequests.find((entry) => entry.table === 'shift_reports').complete([])
+  await turn()
+  app.requests.at(-1).complete([])
+  await turn()
+  button(app.render(account.workspaceElement), 'Команда').props.onClick()
+  const directory = named(app.render(account.workspaceElement), 'TeamDirectory')
+  app.render({ ...directory, key: 'directory' })
+  assert.equal(reads.length, 1)
+  app.unmount('directory')
+  assert.equal(reads[0].scope.controller.signal.aborted, true)
+  app.render({ ...directory, key: 'directory-reopened' })
+  reads[1].response.resolve({ source: 'data:fresh' })
+  await turn()
+  reads[0].response.resolve({ source: 'data:stale' })
+  await turn()
+  const view = app.render({ ...directory, key: 'directory-reopened' })
+  assert.equal(named(view, 'UserAvatar').props.avatar, 'data:fresh')
+  app.dispose()
+})
 
 async function startProfile(app, userId, role) {
   const requestIndex = app.requests.length

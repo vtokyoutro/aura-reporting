@@ -38,6 +38,9 @@ import {
 import { loadReports, loadTeam, type ReportRow, type Shift, type Staff } from './lib/report-data'
 import { DashboardView } from './components/DashboardView'
 import { ProfileMenu, UserAvatar } from './components/ProfileMenu'
+import { avatarStorage } from './lib/avatar-client'
+import { avatarDataUrl } from './lib/avatar-image'
+import { loadTeamAvatars } from './lib/team-avatars'
 import ModelAnalytics from './components/ModelAnalytics'
 import {
   MotionProvider,
@@ -522,6 +525,7 @@ function TeamDirectory({
   team,
   rows,
   currentUser,
+  scope,
   avatar,
   onOpen,
   onAnalyze
@@ -529,12 +533,54 @@ function TeamDirectory({
   team: Staff[]
   rows: ReportRow[]
   currentUser: string
+  scope: SessionScope
   avatar: string | null
   onOpen: (id: string) => void
   onAnalyze: (id: string) => void
 }): JSX.Element {
   const [requestedPage, setRequestedPage] = useState(0)
   const page = Math.min(requestedPage, Math.max(0, Math.ceil(team.length / teamPageSize) - 1))
+  const [loaded, setLoaded] = useState<{
+    team: Staff[]
+    page: number
+    scope: SessionScope
+    images: Record<string, string | null>
+    failed: boolean
+  } | null>(null)
+  useEffect(() => {
+    const storage = avatarStorage
+    if (!storage || scope.controller.signal.aborted) return
+    const controller = new AbortController()
+    const abort = (): void => controller.abort()
+    scope.controller.signal.addEventListener('abort', abort, { once: true })
+    const readScope = {
+      userId: scope.userId,
+      controller,
+      get accessToken(): string {
+        return scope.accessToken
+      }
+    }
+    const ids = team
+      .slice(page * teamPageSize, (page + 1) * teamPageSize)
+      .map((member) => member.id)
+      .filter((id) => id !== scope.userId)
+    void loadTeamAvatars(ids, controller.signal, async (id) => {
+      const image = await storage.load(readScope, id)
+      return image ? avatarDataUrl(image) : null
+    })
+      .then((result) => {
+        if (!controller.signal.aborted) setLoaded({ team, page, scope, ...result })
+      })
+      .catch(() => {
+        /* An aborted batch cannot update this directory. */
+      })
+    return () => {
+      controller.abort()
+      scope.controller.signal.removeEventListener('abort', abort)
+    }
+  }, [team, page, scope])
+  const current =
+    loaded?.team === team && loaded.page === page && loaded.scope === scope ? loaded : null
   const summaries = useMemo(() => {
     const byStaff = new Map<string, { shifts: number; lastDate: string }>()
     for (const row of rows) {
@@ -552,6 +598,11 @@ function TeamDirectory({
         <h2 id="team-directory-heading">Сотрудники</h2>
         <span className="muted number">{team.length}</span>
       </div>
+      {current?.failed && (
+        <p role="status" className="muted">
+          Некоторые аватарки недоступны. Показаны инициалы.
+        </p>
+      )}
       {team.length ? (
         <ul className="team-grid">
           {team.slice(page * teamPageSize, (page + 1) * teamPageSize).map((member) => {
@@ -562,7 +613,9 @@ function TeamDirectory({
                 <div className="team-identity">
                   <UserAvatar
                     name={memberName}
-                    avatar={member.id === currentUser ? avatar : null}
+                    avatar={
+                      member.id === currentUser ? avatar : (current?.images[member.id] ?? null)
+                    }
                   />
                   <div>
                     <h3>{memberName}</h3>
@@ -1386,6 +1439,7 @@ function Workspace({
                   team={team}
                   rows={filtered}
                   currentUser={userId}
+                  scope={scope}
                   avatar={avatar}
                   onOpen={openMemberHistory}
                   onAnalyze={openMemberAnalytics}

@@ -10,7 +10,8 @@ export type AvatarScope = {
 }
 
 export type AvatarStorage = {
-  load: (scope: AvatarScope) => Promise<Blob | null>
+  // A target UID is accepted only by reads. Mutations always use scope.userId.
+  load: (scope: AvatarScope, targetUserId?: string) => Promise<Blob | null>
   save: (scope: AvatarScope, image: Blob) => Promise<void>
   remove: (scope: AvatarScope) => Promise<void>
 }
@@ -71,19 +72,22 @@ export function createAvatarStorage(
   }
 
   return {
-    async load(scope): Promise<Blob | null> {
-      const path = objectPath(scope)
-      const response = await send(scope, `${endpoint}/${path}`)
+    async load(scope, targetUserId = scope.userId): Promise<Blob | null> {
+      objectPath(scope)
+      if (!accountId.test(targetUserId)) throw new Error('Некорректный сотрудник.')
+      const path = `${targetUserId}/avatar.webp`
+      const readEndpoint = new URL(`/storage/v1/object/authenticated/${bucket}`, url).href
+      const response = await send(scope, `${readEndpoint}/${path}`)
       if (!response.ok) {
-        const error: { error?: string; code?: string; message?: string } | null = await response
+        const error: { error?: string; code?: string } | null = await response
           .json()
           .catch(() => null)
         scope.controller.signal.throwIfAborted()
         if (
-          error?.code === 'NoSuchKey' ||
-          error?.error === 'NoSuchKey' ||
-          error?.message === 'Object not found'
+          (response.status === 400 || response.status === 404) &&
+          (error?.code === 'NoSuchKey' || error?.error === 'NoSuchKey')
         )
+          // Unavailable to this session; not proof that the object does not exist.
           return null
         throw new Error('Не удалось загрузить аватарку. Проверьте доступ к хранилищу.')
       }
