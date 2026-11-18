@@ -28,22 +28,27 @@ import {
   ChevronRight,
   Pencil,
   Bell,
-  TrendingUp,
   Save,
   X,
   Clock3
 } from 'lucide-react'
 import { loadReports, loadTeam, type ReportRow, type Shift, type Staff } from './lib/report-data'
+import ModelAnalytics from './components/ModelAnalytics'
+import {
+  createReportsCsv,
+  dateLabel,
+  filterReports,
+  indexReportsByDate,
+  money,
+  revenue,
+  shiftLabels,
+  sum,
+  type ModelName,
+  type ReportPeriod
+} from './lib/report-view'
 
 type ProfileReport = { startingBalance: string; endingBalance: string; sales: string; customers: string; leads: string }
 type Page = 'dashboard' | 'report' | 'history' | 'analytics' | 'calendar' | 'team'
-const shiftLabels: Record<Shift, string> = { morning: '🌅 Утренняя', day: '☀️ Дневная', night: '🌙 Ночная' }
-const money = (n: number): string =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
-const sum = (rows: ReportRow[], key: keyof ReportRow): number =>
-  rows.reduce((a, r) => a + Number(r[key] ?? 0), 0)
-const revenue = (r: ReportRow, model: 'alice' | 'alexa'): number =>
-  Number(r[`${model}_end_balance`] ?? 0) - Number(r[`${model}_start_balance`] ?? 0)
 const toForm = (r: ReportRow, model: 'alice' | 'alexa'): ProfileReport => ({
   startingBalance: String(r[`${model}_start_balance`] ?? ''),
   endingBalance: String(r[`${model}_end_balance`] ?? ''),
@@ -51,12 +56,6 @@ const toForm = (r: ReportRow, model: 'alice' | 'alexa'): ProfileReport => ({
   customers: String(r[`${model}_customers`] ?? ''),
   leads: String(r[`${model}_leads`] ?? '')
 })
-const dateLabel = (s: string): string =>
-  new Date(`${s}T12:00:00`).toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  })
 const emptyReport = (): ProfileReport => ({
   startingBalance: '',
   endingBalance: '',
@@ -94,39 +93,6 @@ function ProfileFields({ title, report, onChange }: { title: string; report: Pro
         <input type="number" min={field.min} step={field.step} value={report[field.key]} onChange={e => onChange({ ...report, [field.key]: e.target.value })} placeholder="0" required style={fieldStyle} />
       </label>)}
     </div>
-  </section>
-}
-
-type ModelName = 'alice' | 'alexa'
-function ModelAnalytics({ model, rows }: { model: ModelName; rows: ReportRow[] }): JSX.Element {
-  const name = model === 'alice' ? 'Alice' : 'Alexa'
-  const accent = model === 'alice' ? '#aa8cff' : '#5dc8d9'
-  const ordered = [...rows].sort((a,b) => a.report_date.localeCompare(b.report_date)).slice(-40)
-  const balance = ordered.map(r => revenue(r, model))
-  const sales = ordered.map(r => Number(r[`${model}_sales`] ?? 0))
-  const leads = ordered.map(r => Number(r[`${model}_leads`] ?? 0))
-  const total = (key: 'sales' | 'customers' | 'leads'): number => sum(rows, `${model}_${key}` as keyof ReportRow)
-  const line = (values: number[]): string => {
-    if (!values.length) return ''
-    const low = Math.min(0, ...values), high = Math.max(1, ...values)
-    const span = Math.max(1, high - low)
-    return values.map((v,i) => `${i ? 'L' : 'M'}${values.length === 1 ? 160 : 12 + i * 296/(values.length-1)},${83 - (v-low)/span*66}`).join(' ')
-  }
-  return <section className="aura-model-panel" style={{...panelStyle,borderTop:`3px solid ${accent}`}}>
-    <div className="aura-section-header"><div><h2 style={{margin:'0 0 6px',color:accent}}>{name}</h2><p style={subtitle}>Индивидуальная статистика модели</p></div><TrendingUp size={22} color={accent}/></div>
-    <div className="aura-model-kpis">
-      {[["Изменение баланса",money(rows.reduce((n,r)=>n+revenue(r,model),0))],["Продажи",String(total('sales'))],["Покупатели",String(total('customers'))],["Лиды",String(total('leads'))]].map(([label,value])=><div key={label} className="aura-mini-stat"><small>{label}</small><strong>{value}</strong></div>)}
-    </div>
-    {([['Изменение баланса',balance,true],['Продажи',sales,false],['Лиды',leads,false]] as [string,number[],boolean][]).map(([label,values,isMoney])=><div key={label} className="aura-chart-block">
-      <div className="aura-section-header"><strong>{label}</strong><small style={{color:colors.muted}}>Последние {ordered.length} смен</small></div>
-      {ordered.length ? <svg viewBox="0 0 320 102" preserveAspectRatio="none" className="aura-chart" role="img" aria-label={`График: ${name}, ${label}`}>
-        {[25,50,75].map(y=><line key={y} x1="0" x2="320" y1={y} y2={y} stroke="#30374b" strokeDasharray="4 5"/>) }
-        <path d={line(values)} stroke={accent} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" fill="none" vectorEffect="non-scaling-stroke"/>
-        {values.length===1 && <circle cx="160" cy="83" r="4" fill={accent}/>}
-      </svg> : <p style={subtitle}>Нет данных за выбранный период.</p>}
-      <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:colors.muted}}><span>{ordered.length ? dateLabel(ordered[0].report_date) : '—'}</span><span>{ordered.length ? dateLabel(ordered[ordered.length-1].report_date) : '—'}</span></div>
-      {values.length>0 && <p style={{...subtitle,fontSize:12,marginTop:8}}>Последняя смена: {isMoney ? money(values[values.length-1]) : values[values.length-1]}</p>}
-    </div>)}
   </section>
 }
 
@@ -333,7 +299,7 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
   })
   const [fetching, setFetching] = useState(false)
   const [dataError, setDataError] = useState('')
-  const [period, setPeriod] = useState<'7' | '30' | 'month' | 'all'>('month')
+  const [period, setPeriod] = useState<ReportPeriod>('month')
   const [person, setPerson] = useState('all')
   const [search, setSearch] = useState('')
   const [filterShift, setFilterShift] = useState('all')
@@ -415,16 +381,20 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
     setProfileAttempt((attempt) => attempt + 1)
   }
 
-  const filtered = useMemo(() => {
-    const now = new Date(); const start = new Date(now.getFullYear(), now.getMonth(), 1)
-    if (period === '7' || period === '30') { start.setTime(now.getTime()); start.setDate(now.getDate() - Number(period) + 1) }
-    return reports.filter(r => (period === 'all' || r.report_date >= `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`) && (person === 'all' || r.staff_id === person) && (filterShift === 'all' || r.shift_type === filterShift) && (!search || `${r.report_date} ${shiftLabels[r.shift_type]} ${team.find(t => t.id === r.staff_id)?.display_name ?? ''}`.toLowerCase().includes(search.toLowerCase())))
-  }, [reports, period, person, filterShift, search, team])
+  const staffById = useMemo(() => new Map(team.map((member) => [member.id, member])), [team])
+  const filtered = useMemo(
+    () => filterReports(reports, { period, person, shift: filterShift, search }, staffById, new Date()),
+    [reports, period, person, filterShift, search, staffById]
+  )
+  const calendarReports = useMemo(
+    () => (page === 'calendar' ? indexReportsByDate(reports, person) : undefined),
+    [page, reports, person]
+  )
   const totals = useMemo(() => ({ shifts: filtered.length, alice: filtered.reduce((a,r) => a + revenue(r,'alice'),0), alexa: filtered.reduce((a,r) => a + revenue(r,'alexa'),0), sales: sum(filtered,'alice_sales') + sum(filtered,'alexa_sales'), leads: sum(filtered,'alice_leads') + sum(filtered,'alexa_leads'), customers: sum(filtered,'alice_customers') + sum(filtered,'alexa_customers') }), [filtered])
   const nameOf = (id: string): string =>
     id === staff?.id
       ? staff?.display_name || email || 'Я'
-      : (team.find((t) => t.id === id)?.display_name ?? 'Сотрудник')
+      : (staffById.get(id)?.display_name ?? 'Сотрудник')
   useEffect(() => {
     if (signal.aborted || !dirty || page !== 'report' || editing) return
     try {
@@ -515,41 +485,7 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
   }
   function exportCSV(): void {
     if (signal.aborted) return
-    const headers = [
-      'Дата',
-      'Смена',
-      'Сотрудник',
-      'Alice начало',
-      'Alice конец',
-      'Alice продажи',
-      'Alice покупатели',
-      'Alice лиды',
-      'Alexa начало',
-      'Alexa конец',
-      'Alexa продажи',
-      'Alexa покупатели',
-      'Alexa лиды'
-    ]
-    const lines = filtered.map((r) =>
-      [
-        r.report_date,
-        r.shift_type,
-        nameOf(r.staff_id),
-        r.alice_start_balance,
-        r.alice_end_balance,
-        r.alice_sales,
-        r.alice_customers,
-        r.alice_leads,
-        r.alexa_start_balance,
-        r.alexa_end_balance,
-        r.alexa_sales,
-        r.alexa_customers,
-        r.alexa_leads
-      ]
-        .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
-        .join(',')
-    )
-    const blob = new Blob(['\uFEFF' + [headers.join(','), ...lines].join('\r\n')], {
+    const blob = new Blob([createReportsCsv(filtered, nameOf)], {
       type: 'text/csv;charset=utf-8'
     })
     const url = URL.createObjectURL(blob)
@@ -798,10 +734,10 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
         {page === 'history' && <><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,marginBottom:16}}><span style={{color:colors.muted}}>Найдено: {filtered.length}</span><button type="button" onClick={exportCSV} style={secondaryButton}><Download size={16}/> Экспорт CSV</button></div>{renderRows(filtered)}</>}
         {page === 'analytics' && <>
           <section style={{...panelStyle,marginTop:20,marginBottom:20}}><h2 style={{margin:'0 0 8px'}}>Подробная аналитика моделей</h2><p style={subtitle}>Для каждой модели — собственные показатели и графики по сменам. Данные Alice и Alexa не смешиваются.</p></section>
-          <div className="aura-model-stack"><ModelAnalytics model="alice" rows={filtered}/><ModelAnalytics model="alexa" rows={filtered}/></div>
+          <div className="aura-model-stack"><ModelAnalytics model="alice" rows={filtered} panelStyle={panelStyle} subtitleStyle={subtitle}/><ModelAnalytics model="alexa" rows={filtered} panelStyle={panelStyle} subtitleStyle={subtitle}/></div>
         </>}
         {page === 'team' && isLeader && <><h2>Сотрудники</h2><div className="aura-stats">{team.map(t => { const own = filtered.filter(r => r.staff_id === t.id); return <button key={t.id} type="button" onClick={() => {setPerson(t.id);setPage('history')}} style={{...panelStyle,textAlign:'left',color:colors.text,cursor:'pointer'}}><strong>{t.display_name}</strong><p style={subtitle}>{t.role === 'leader' ? 'Руководитель' : 'Чаттер'} · {own.length} смен</p><h2>{money(own.reduce((a,r) => a + revenue(r,'alice')+revenue(r,'alexa'),0))}</h2></button>})}</div><h2>Отчёты команды</h2>{renderRows(filtered)}</>}
-        {page === 'calendar' && <section style={{...panelStyle,width:'100%'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}><button type="button" style={secondaryButton} onClick={() => changeMonth(-1)}><ChevronLeft size={18}/></button><h2 style={{margin:0}}>{new Date(`${calendarMonth}-01T12:00:00`).toLocaleDateString('ru-RU',{month:'long',year:'numeric'})}</h2><button type="button" style={secondaryButton} onClick={() => changeMonth(1)}><ChevronRight size={18}/></button></div><div className="aura-calendar">{['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(d => <div key={d} style={{textAlign:'center',color:colors.muted,fontSize:12}}>{d}</div>)}{calendarCells().map((d,i) => { const dayReports = d ? reports.filter(r => r.report_date === d && (person === 'all' || r.staff_id === person)) : []; return <button key={i} type="button" disabled={!d} onClick={() => {if (dayReports.length===1) editReport(dayReports[0]); else if (d) {setPeriod('all');setSearch(d);setPage('history')}}} style={{borderColor:dayReports.length ? colors.accent : colors.border}}>{d?.slice(-2)}{dayReports.length>0 && <div style={{fontSize:11,color:'#ad9bff',marginTop:6}}>{dayReports.length} отч.</div>}</button>})}</div><p style={{...subtitle,fontSize:12,marginTop:18}}>Нажми на день с отчётом, чтобы открыть его. Если отчётов несколько — откроется история.</p></section>}
+        {page === 'calendar' && <section style={{...panelStyle,width:'100%'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}><button type="button" style={secondaryButton} onClick={() => changeMonth(-1)}><ChevronLeft size={18}/></button><h2 style={{margin:0}}>{new Date(`${calendarMonth}-01T12:00:00`).toLocaleDateString('ru-RU',{month:'long',year:'numeric'})}</h2><button type="button" style={secondaryButton} onClick={() => changeMonth(1)}><ChevronRight size={18}/></button></div><div className="aura-calendar">{['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(d => <div key={d} style={{textAlign:'center',color:colors.muted,fontSize:12}}>{d}</div>)}{calendarCells().map((d,i) => { const dayReports = d ? (calendarReports?.get(d) ?? []) : []; return <button key={i} type="button" disabled={!d} onClick={() => {if (dayReports.length===1) editReport(dayReports[0]); else if (d) {setPeriod('all');setSearch(d);setPage('history')}}} style={{borderColor:dayReports.length ? colors.accent : colors.border}}>{d?.slice(-2)}{dayReports.length>0 && <div style={{fontSize:11,color:'#ad9bff',marginTop:6}}>{dayReports.length} отч.</div>}</button>})}</div><p style={{...subtitle,fontSize:12,marginTop:18}}>Нажми на день с отчётом, чтобы открыть его. Если отчётов несколько — откроется история.</p></section>}
       </div>}
       {page === 'report' && <div style={{width:'100%'}}> 
         <div style={eyebrow}>Отчётность / {editing ? 'Редактирование' : 'Новый отчёт'}</div>

@@ -232,6 +232,11 @@ function setup() {
       exports,
       require(name) {
         if (name === './lib/report-data') return loadModule('lib/report-data.ts')
+        if (name === './lib/report-view' || name === '../lib/report-view') {
+          return loadModule('lib/report-view.ts')
+        }
+        if (name === './components/ModelAnalytics')
+          return loadModule('components/ModelAnalytics.tsx')
         assert.ok(Object.hasOwn(dependencies, name), 'Unexpected test import: ' + name)
         return dependencies[name]
       },
