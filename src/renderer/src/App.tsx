@@ -28,16 +28,15 @@ import {
   ChevronRight,
   Pencil,
   Bell,
-  Save,
   X,
   Clock3,
-  Activity,
   FileText,
   SlidersHorizontal,
   CircleAlert,
   Diamond
 } from 'lucide-react'
 import { loadReports, loadTeam, type ReportRow, type Shift, type Staff } from './lib/report-data'
+import { DashboardView } from './components/DashboardView'
 import ModelAnalytics from './components/ModelAnalytics'
 import {
   MotionProvider,
@@ -54,7 +53,6 @@ import {
   money,
   revenue,
   shiftLabels,
-  sum,
   type ModelName,
   type ReportPeriod
 } from './lib/report-view'
@@ -752,7 +750,7 @@ function Workspace({
     [page, reports, person]
   )
   const shiftsByType = useMemo(() => {
-    if (page !== 'dashboard' && page !== 'team') return null
+    if (page !== 'team') return null
     const counts = { morning: 0, day: 0, night: 0 }
     for (const row of filtered) {
       const shiftType = row.shift_type
@@ -1070,7 +1068,6 @@ function Workspace({
         : [],
     [page, reports, dateToday, person]
   )
-  const todaysStaff = [...new Set(todayReports.map((row) => row.staff_id))]
   const reportTableKey = JSON.stringify([period, person, visibleShift, visibleSearch])
 
   if (!staff)
@@ -1120,7 +1117,9 @@ function Workspace({
   return (
     <div className="aura-shell">
       <aside className="sidebar">
-        <Brand />
+        <div className="rail-brand" title="AURA Reporting System">
+          <Brand />
+        </div>
         <nav className="sidebar-nav" aria-label="Разделы приложения">
           {navigation
             .filter((item) => item.page !== 'team' || isLeader)
@@ -1131,93 +1130,46 @@ function Workspace({
                 className="nav-button"
                 aria-current={page === target ? 'page' : undefined}
                 aria-label={label}
-                title={label}
                 onClick={() => navigate(target)}
               >
                 <Icon size={19} aria-hidden="true" />
-                <span>{label}</span>
+                <span className="rail-label" aria-hidden="true">
+                  {label}
+                </span>
               </button>
             ))}
         </nav>
-        <div className="sidebar-account">
-          <span className="avatar" aria-hidden="true">
-            {personName.slice(0, 1).toUpperCase()}
-          </span>
-          <div className="account-label">
-            <strong title={personName}>{personName}</strong>
-            <span>{roleName}</span>
-          </div>
-          <button
-            type="button"
-            className="button button-quiet icon-button logout-button"
-            aria-label="Выйти"
-            title="Выйти"
-            onClick={handleLogout}
-          >
-            <LogOut size={18} aria-hidden="true" />
-            <span className="sr-only">Выйти</span>
-          </button>
-        </div>
       </aside>
 
-      <main className="workspace" ref={mainRef} tabIndex={-1} aria-label={title}>
-        {error && (
-          <p className="message message-error topology-message" role="alert">
-            {error}
-          </p>
-        )}
-        {dataError && (
-          <p className="message message-error topology-message" role="alert">
-            <CircleAlert size={18} aria-hidden="true" /> Ошибка загрузки: {dataError}
-          </p>
-        )}
-        {toast && (
-          <div className="toast">
-            <span role="status">
-              <Bell size={18} aria-hidden="true" />
-              {toast}
-            </span>
-            <button
-              type="button"
-              className="button button-quiet icon-button"
-              aria-label="Закрыть уведомление"
-              onClick={() => setToast('')}
-            >
-              <X size={17} aria-hidden="true" />
-            </button>
-          </div>
-        )}
-
-        <SectionTransition sectionKey={page}>
-          <header className="page-header">
-            <div>
-              {page === 'dashboard' ? (
-                <p className="page-kicker">
-                  <span />
-                  {dateLabel(dateToday)}
-                </p>
-              ) : null}
-              <h1>{title}</h1>
-              {page === 'dashboard' && (
-                <p className="page-description">
-                  Здравствуйте, {personName}. <span className="role-pill">{roleName}</span>
-                </p>
-              )}
-            </div>
-            <div className="button-group">
-              {page === 'report' ? (
-                <button
-                  type="button"
-                  className="button button-secondary"
-                  onClick={() => navigate(editing ? 'history' : 'dashboard')}
-                >
-                  <ArrowLeft size={17} aria-hidden="true" /> Назад
-                </button>
-              ) : (
+      <div className="workspace-frame">
+        <header className="workspace-topbar">
+          <div className="workspace-topbar-inner">
+            <span className="topbar-section">{page === 'dashboard' ? 'Главная' : title}</span>
+            <div className="topbar-actions">
+              <div className="topbar-profile" title={personName}>
+                <span className="avatar" aria-hidden="true">
+                  {personName.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="account-label">
+                  <strong title={personName}>{personName}</strong>
+                  <span>{roleName}</span>
+                </span>
+              </div>
+              <button
+                type="button"
+                className="button button-quiet icon-button logout-button"
+                aria-label="Выйти"
+                title="Выйти"
+                onClick={handleLogout}
+              >
+                <LogOut size={18} aria-hidden="true" />
+                <span className="sr-only">Выйти</span>
+              </button>
+              {page !== 'report' && (
                 <>
                   <MotionButton
                     type="button"
-                    className="button button-secondary icon-button"
+                    className="button button-quiet icon-button topbar-refresh"
                     onClick={() => void refreshData(staff.role)}
                     disabled={fetching}
                     aria-label={fetching ? 'Загружаем данные' : 'Обновить'}
@@ -1231,527 +1183,485 @@ function Workspace({
                   </MotionButton>
                   <MotionButton
                     type="button"
-                    className="button button-primary"
+                    className="button button-primary topbar-create"
                     onClick={openReport}
+                    aria-label="Создать отчёт"
+                    title="Создать отчёт"
                   >
-                    <FilePlus2 size={18} aria-hidden="true" /> Создать отчёт
+                    <FilePlus2 size={18} aria-hidden="true" />
+                    <span className="topbar-create-label">Создать отчёт</span>
                   </MotionButton>
                 </>
               )}
             </div>
-          </header>
-          {fetching && (
-            <span className="sr-only" role="status">
-              Обновляем данные
-            </span>
+          </div>
+        </header>
+
+        <main
+          className={`workspace${page === 'dashboard' ? ' workspace-dashboard' : ''}`}
+          ref={mainRef}
+          tabIndex={-1}
+          aria-label={title}
+        >
+          {error && (
+            <p className="message message-error topology-message" role="alert">
+              {error}
+            </p>
+          )}
+          {dataError && (
+            <p className="message message-error topology-message" role="alert">
+              <CircleAlert size={18} aria-hidden="true" /> Ошибка загрузки: {dataError}
+            </p>
+          )}
+          {toast && (
+            <div className="toast">
+              <span role="status">
+                <Bell size={18} aria-hidden="true" />
+                {toast}
+              </span>
+              <button
+                type="button"
+                className="button button-quiet icon-button"
+                aria-label="Закрыть уведомление"
+                onClick={() => setToast('')}
+              >
+                <X size={17} aria-hidden="true" />
+              </button>
+            </div>
           )}
 
-          {page !== 'report' && (page !== 'calendar' || isLeader) && (
-            <div className="filters panel" role="group" aria-label="Фильтры">
-              <span className="filter-icon" aria-hidden="true">
-                <SlidersHorizontal size={18} />
-              </span>
-              {page !== 'calendar' && (
-                <label className="field filter-field">
-                  <span>Период</span>
-                  <select
-                    value={period}
-                    onChange={(event) => setPeriod(event.target.value as ReportPeriod)}
+          <SectionTransition sectionKey={page}>
+            {page !== 'dashboard' && (
+              <header className="page-header">
+                <h1>{title}</h1>
+                {page === 'report' && (
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() => navigate(editing ? 'history' : 'dashboard')}
                   >
-                    <option value="7">Последние 7 дней</option>
-                    <option value="30">Последние 30 дней</option>
-                    <option value="month">Текущий месяц</option>
-                    <option value="all">Всё время</option>
-                  </select>
-                </label>
-              )}
-              {isLeader && (
-                <label className="field filter-field">
-                  <span>Сотрудник</span>
-                  <select value={person} onChange={(event) => setPerson(event.target.value)}>
-                    <option value="all">Все сотрудники</option>
-                    {team.map((member) => (
-                      <option value={member.id} key={member.id}>
-                        {member.display_name || 'Сотрудник'}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {detailedFilters && (
-                <>
+                    <ArrowLeft size={17} aria-hidden="true" /> Назад
+                  </button>
+                )}
+              </header>
+            )}
+            {fetching && (
+              <span className="sr-only" role="status">
+                Обновляем данные
+              </span>
+            )}
+
+            {page !== 'dashboard' && page !== 'report' && (page !== 'calendar' || isLeader) && (
+              <div className="filters panel" role="group" aria-label="Фильтры">
+                <span className="filter-icon" aria-hidden="true">
+                  <SlidersHorizontal size={18} />
+                </span>
+                {page !== 'calendar' && (
                   <label className="field filter-field">
-                    <span>Смена</span>
+                    <span>Период</span>
                     <select
-                      value={filterShift}
-                      onChange={(event) => setFilterShift(event.target.value)}
+                      value={period}
+                      onChange={(event) => setPeriod(event.target.value as ReportPeriod)}
                     >
-                      <option value="all">Все смены</option>
-                      {(Object.keys(shiftNames) as Shift[]).map((value) => (
-                        <option key={value} value={value}>
-                          {shiftNames[value]}
+                      <option value="7">Последние 7 дней</option>
+                      <option value="30">Последние 30 дней</option>
+                      <option value="month">Текущий месяц</option>
+                      <option value="all">Всё время</option>
+                    </select>
+                  </label>
+                )}
+                {isLeader && (
+                  <label className="field filter-field">
+                    <span>Сотрудник</span>
+                    <select value={person} onChange={(event) => setPerson(event.target.value)}>
+                      <option value="all">Все сотрудники</option>
+                      {team.map((member) => (
+                        <option value={member.id} key={member.id}>
+                          {member.display_name || 'Сотрудник'}
                         </option>
                       ))}
                     </select>
                   </label>
-                  <label className="field filter-search">
-                    <span>Поиск</span>
-                    <input
-                      type="search"
-                      value={search}
-                      placeholder="Дата или имя"
-                      onChange={(event) => setSearch(event.target.value)}
-                    />
-                  </label>
-                </>
-              )}
-            </div>
-          )}
-
-          {(page === 'dashboard' || page === 'team') && (
-            <div className="kpi-grid" aria-label="Сводка за период">
-              {kpis.map(([label, value], index) => (
-                <MotionCard
-                  key={label}
-                  delay={index * 0.025}
-                  className={`panel kpi-card${index === 0 ? ' kpi-featured' : ''}`}
-                >
-                  <span>{label}</span>
-                  <strong className="number">{value}</strong>
-                </MotionCard>
-              ))}
-            </div>
-          )}
-
-          {page === 'dashboard' && (
-            <>
-              {draftFound && (
-                <MotionCard className="draft-banner panel">
-                  <div className="section-title">
-                    <span className="section-icon">
-                      <Save size={19} aria-hidden="true" />
-                    </span>
-                    <div>
-                      <h2>Незавершённый отчёт</h2>
-                      <p>Черновик сохранён на этом устройстве.</p>
-                    </div>
-                  </div>
-                  <button type="button" onClick={restoreDraft} className="button button-secondary">
-                    Продолжить <ArrowRight size={17} aria-hidden="true" />
-                  </button>
-                </MotionCard>
-              )}
-              <div className="dashboard-grid">
-                <section className="panel table-panel" aria-labelledby="recent-reports">
-                  <div className="section-heading">
-                    <h2 id="recent-reports">Последние отчёты</h2>
-                    <button
-                      type="button"
-                      className="button button-quiet"
-                      onClick={() => navigate('history')}
-                    >
-                      Вся история <ArrowRight size={16} aria-hidden="true" />
-                    </button>
-                  </div>
-                  <ReportTable
-                    rows={filtered.slice(0, 5)}
-                    leader={isLeader}
-                    label="Последние отчёты"
-                    loading={fetching && !reports.length}
-                    nameOf={nameOf}
-                    onEdit={editReport}
-                  />
-                </section>
-                <MotionCard className="panel activity-panel" delay={0.08}>
-                  <div className="section-title">
-                    <span className="section-icon">
-                      <Activity size={18} aria-hidden="true" />
-                    </span>
-                    <h2>Сегодня</h2>
-                  </div>
-                  <strong className="activity-value number">{todayReports.length}</strong>
-                  <p className="muted">Отчётов за {dateLabel(dateToday)}</p>
-                  {isLeader &&
-                    (todaysStaff.length ? (
-                      <ul className="activity-list" aria-label="Сотрудники, сдавшие отчёт сегодня">
-                        {todaysStaff.map((id) => (
-                          <li key={id}>
-                            <span className="activity-dot" aria-hidden="true" />
-                            {nameOf(id)}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="muted">Сотрудники пока не сдавали отчёты.</p>
-                    ))}
-                  <button
-                    type="button"
-                    className="button button-quiet"
-                    onClick={() => navigate('calendar')}
-                  >
-                    Открыть календарь <ArrowRight size={16} aria-hidden="true" />
-                  </button>
-                </MotionCard>
-              </div>
-              <div className="model-summary-grid">
-                {(['alice', 'alexa'] as ModelName[]).map((model, index) => (
-                  <MotionCard
-                    key={model}
-                    reveal
-                    delay={index * 0.05}
-                    className={`panel model-summary model-${model}`}
-                  >
-                    <div className="section-heading">
-                      <h2>
-                        <span className="model-dot" />
-                        {model === 'alice' ? 'Alice' : 'Alexa'}
-                      </h2>
-                      <button
-                        type="button"
-                        className="button button-quiet"
-                        onClick={() => navigate('analytics')}
+                )}
+                {detailedFilters && (
+                  <>
+                    <label className="field filter-field">
+                      <span>Смена</span>
+                      <select
+                        value={filterShift}
+                        onChange={(event) => setFilterShift(event.target.value)}
                       >
-                        Аналитика <ArrowRight size={16} aria-hidden="true" />
-                      </button>
-                    </div>
-                    <dl>
-                      <div>
-                        <dt>Изменение баланса</dt>
-                        <dd>
-                          {money(filtered.reduce((total, row) => total + revenue(row, model), 0))}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Продажи</dt>
-                        <dd>{sum(filtered, `${model}_sales`)}</dd>
-                      </div>
-                      <div>
-                        <dt>Покупатели</dt>
-                        <dd>{sum(filtered, `${model}_customers`)}</dd>
-                      </div>
-                      <div>
-                        <dt>Лиды</dt>
-                        <dd>{sum(filtered, `${model}_leads`)}</dd>
-                      </div>
-                    </dl>
+                        <option value="all">Все смены</option>
+                        {(Object.keys(shiftNames) as Shift[]).map((value) => (
+                          <option key={value} value={value}>
+                            {shiftNames[value]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field filter-search">
+                      <span>Поиск</span>
+                      <input
+                        type="search"
+                        value={search}
+                        placeholder="Дата или имя"
+                        onChange={(event) => setSearch(event.target.value)}
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
+            )}
+
+            {page === 'team' && (
+              <div className="kpi-grid" aria-label="Сводка за период">
+                {kpis.map(([label, value], index) => (
+                  <MotionCard
+                    key={label}
+                    delay={index * 0.025}
+                    className={`panel kpi-card${index === 0 ? ' kpi-featured' : ''}`}
+                  >
+                    <span>{label}</span>
+                    <strong className="number">{value}</strong>
                   </MotionCard>
                 ))}
               </div>
-            </>
-          )}
+            )}
 
-          {page === 'history' && (
-            <section className="panel table-panel" aria-labelledby="history-table-heading">
-              <div className="section-heading">
-                <div>
-                  <h2 id="history-table-heading">Отчёты</h2>
-                  <p className="muted number" aria-live="polite">
-                    Найдено: {filtered.length}
-                  </p>
-                </div>
-                <button type="button" className="button button-secondary" onClick={exportCSV}>
-                  <Download size={17} aria-hidden="true" /> Экспорт CSV
-                </button>
-              </div>
-              <ReportTable
-                key={reportTableKey}
-                rows={filtered}
-                leader={isLeader}
-                label="История отчётов"
-                loading={fetching && !reports.length}
-                paginate
-                nameOf={nameOf}
-                onEdit={editReport}
-              />
-            </section>
-          )}
-
-          {page === 'analytics' && (
-            <div className="analytics-stack">
-              <ModelAnalytics model="alice" rows={filtered} />
-              <ModelAnalytics model="alexa" rows={filtered} />
-            </div>
-          )}
-
-          {page === 'team' && isLeader && (
-            <>
-              <TeamDirectory
+            {page === 'dashboard' && (
+              <DashboardView
+                dateToday={dateToday}
+                displayName={personName}
+                isLeader={isLeader}
+                period={period}
+                onPeriodChange={setPeriod}
+                person={person}
                 team={team}
+                onPersonChange={setPerson}
                 rows={filtered}
-                onOpen={openMemberHistory}
-                onAnalyze={openMemberAnalytics}
+                todayReports={todayReports}
+                nameOf={nameOf}
+                loading={fetching && !reports.length}
+                draftFound={draftFound}
+                onRestoreDraft={restoreDraft}
+                onEdit={editReport}
+                onNavigate={navigate}
               />
-              <section className="panel table-panel" aria-labelledby="team-reports-heading">
+            )}
+
+            {page === 'history' && (
+              <section className="panel table-panel" aria-labelledby="history-table-heading">
                 <div className="section-heading">
-                  <h2 id="team-reports-heading">Отчёты команды</h2>
-                  <span className="muted number">{filtered.length}</span>
+                  <div>
+                    <h2 id="history-table-heading">Отчёты</h2>
+                    <p className="muted number" aria-live="polite">
+                      Найдено: {filtered.length}
+                    </p>
+                  </div>
+                  <button type="button" className="button button-secondary" onClick={exportCSV}>
+                    <Download size={17} aria-hidden="true" /> Экспорт CSV
+                  </button>
                 </div>
                 <ReportTable
                   key={reportTableKey}
                   rows={filtered}
-                  leader
-                  label="Отчёты команды"
+                  leader={isLeader}
+                  label="История отчётов"
                   loading={fetching && !reports.length}
                   paginate
                   nameOf={nameOf}
                   onEdit={editReport}
                 />
               </section>
-            </>
-          )}
+            )}
 
-          {page === 'calendar' && (
-            <div className="calendar-layout">
-              <section className="panel calendar-panel" aria-labelledby="calendar-month">
-                <div className="section-heading">
-                  <h2 id="calendar-month" aria-live="polite">
-                    {new Date(`${calendarMonth}-01T12:00:00`).toLocaleDateString('ru-RU', {
-                      month: 'long',
-                      year: 'numeric'
-                    })}
-                  </h2>
-                  <div className="button-group">
-                    <button
-                      type="button"
-                      className="button button-quiet icon-button"
-                      aria-label="Предыдущий месяц"
-                      onClick={() => changeMonth(-1)}
-                    >
-                      <ChevronLeft size={19} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      className="button button-quiet icon-button"
-                      aria-label="Следующий месяц"
-                      onClick={() => changeMonth(1)}
-                    >
-                      <ChevronRight size={19} aria-hidden="true" />
-                    </button>
+            {page === 'analytics' && (
+              <div className="analytics-stack">
+                <ModelAnalytics model="alice" rows={filtered} />
+                <ModelAnalytics model="alexa" rows={filtered} />
+              </div>
+            )}
+
+            {page === 'team' && isLeader && (
+              <>
+                <TeamDirectory
+                  team={team}
+                  rows={filtered}
+                  onOpen={openMemberHistory}
+                  onAnalyze={openMemberAnalytics}
+                />
+                <section className="panel table-panel" aria-labelledby="team-reports-heading">
+                  <div className="section-heading">
+                    <h2 id="team-reports-heading">Отчёты команды</h2>
+                    <span className="muted number">{filtered.length}</span>
                   </div>
-                </div>
-                <div className="calendar-grid">
-                  {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day, index) => (
-                    <span
-                      className={index >= 5 ? 'weekend' : undefined}
-                      key={day}
-                      aria-hidden="true"
-                    >
-                      {day}
-                    </span>
-                  ))}
-                  {calendarCells().map((day, index) => {
-                    if (!day)
-                      return (
-                        <span className="calendar-gap" aria-hidden="true" key={`gap-${index}`} />
-                      )
-                    const count = calendarReports?.get(day)?.length ?? 0
-                    const date = new Date(`${day}T12:00:00`)
-                    return (
+                  <ReportTable
+                    key={reportTableKey}
+                    rows={filtered}
+                    leader
+                    label="Отчёты команды"
+                    loading={fetching && !reports.length}
+                    paginate
+                    nameOf={nameOf}
+                    onEdit={editReport}
+                  />
+                </section>
+              </>
+            )}
+
+            {page === 'calendar' && (
+              <div className="calendar-layout">
+                <section className="panel calendar-panel" aria-labelledby="calendar-month">
+                  <div className="section-heading">
+                    <h2 id="calendar-month" aria-live="polite">
+                      {new Date(`${calendarMonth}-01T12:00:00`).toLocaleDateString('ru-RU', {
+                        month: 'long',
+                        year: 'numeric'
+                      })}
+                    </h2>
+                    <div className="button-group">
                       <button
+                        type="button"
+                        className="button button-quiet icon-button"
+                        aria-label="Предыдущий месяц"
+                        onClick={() => changeMonth(-1)}
+                      >
+                        <ChevronLeft size={19} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="button button-quiet icon-button"
+                        aria-label="Следующий месяц"
+                        onClick={() => changeMonth(1)}
+                      >
+                        <ChevronRight size={19} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="calendar-grid">
+                    {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day, index) => (
+                      <span
+                        className={index >= 5 ? 'weekend' : undefined}
                         key={day}
-                        type="button"
-                        className={`calendar-day${index % 7 >= 5 ? ' weekend' : ''}`}
-                        aria-pressed={selectedDay === day}
-                        aria-current={day === dateToday ? 'date' : undefined}
-                        aria-label={`${date.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}, отчётов: ${count}`}
-                        onClick={() => setSelectedDay(day)}
+                        aria-hidden="true"
                       >
-                        <span className="number">{date.getDate()}</span>
-                        {count > 0 && (
-                          <small className="day-count">
-                            {count}
-                            <span> отч.</span>
-                          </small>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              </section>
-              <MotionCard className="panel calendar-detail" delay={0.04}>
-                <div className="section-title">
-                  <span className="section-icon">
-                    <CalendarDays size={18} aria-hidden="true" />
-                  </span>
-                  <h2>{dateLabel(selectedDay)}</h2>
-                </div>
-                {!selectedReports.length ? (
-                  <p className="muted">За этот день отчётов нет.</p>
-                ) : (
-                  <>
+                        {day}
+                      </span>
+                    ))}
+                    {calendarCells().map((day, index) => {
+                      if (!day)
+                        return (
+                          <span className="calendar-gap" aria-hidden="true" key={`gap-${index}`} />
+                        )
+                      const count = calendarReports?.get(day)?.length ?? 0
+                      const date = new Date(`${day}T12:00:00`)
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          className={`calendar-day${index % 7 >= 5 ? ' weekend' : ''}`}
+                          aria-pressed={selectedDay === day}
+                          aria-current={day === dateToday ? 'date' : undefined}
+                          aria-label={`${date.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}, отчётов: ${count}`}
+                          onClick={() => setSelectedDay(day)}
+                        >
+                          <span className="number">{date.getDate()}</span>
+                          {count > 0 && (
+                            <small className="day-count">
+                              {count}
+                              <span> отч.</span>
+                            </small>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </section>
+                <MotionCard className="panel calendar-detail" delay={0.04}>
+                  <div className="section-title">
+                    <span className="section-icon">
+                      <CalendarDays size={18} aria-hidden="true" />
+                    </span>
+                    <h2>{dateLabel(selectedDay)}</h2>
+                  </div>
+                  {!selectedReports.length ? (
+                    <p className="muted">За этот день отчётов нет.</p>
+                  ) : (
+                    <>
+                      <p className="muted">
+                        Отчётов: <strong className="number">{selectedReports.length}</strong>
+                      </p>
+                      <ul className="calendar-detail-list">
+                        {selectedReports.slice(0, 4).map((row) => (
+                          <li key={row.id}>
+                            <span className="shift-pill">
+                              {shiftNames[row.shift_type] ?? row.shift_type}
+                            </span>
+                            {isLeader && <span>{nameOf(row.staff_id)}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                      {selectedReports.length === 1 ? (
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          onClick={() => editReport(selectedReports[0])}
+                        >
+                          Открыть отчёт <ArrowRight size={16} aria-hidden="true" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          onClick={openDayHistory}
+                        >
+                          Все отчёты дня <ArrowRight size={16} aria-hidden="true" />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </MotionCard>
+              </div>
+            )}
+
+            {page === 'report' && (
+              <form
+                ref={formRef}
+                onSubmit={handleReport}
+                className="report-form"
+                onChange={() => setDirty(true)}
+                aria-busy={saving}
+              >
+                <section className="panel form-panel" aria-labelledby="shift-information">
+                  <div className="section-title">
+                    <span className="section-icon">
+                      <CalendarDays size={18} aria-hidden="true" />
+                    </span>
+                    <h2 id="shift-information">Информация о смене</h2>
+                  </div>
+                  <div className="shift-fields">
+                    <label className="field">
+                      <span>Дата</span>
+                      <input
+                        type="date"
+                        value={date}
+                        disabled={!!editing}
+                        onChange={(event) => setDate(event.target.value)}
+                        required
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Смена</span>
+                      <select
+                        value={shift}
+                        onChange={(event) => setShift(event.target.value as Shift)}
+                      >
+                        {(Object.keys(shiftNames) as Shift[]).map((value) => (
+                          <option key={value} value={value}>
+                            {shiftNames[value]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="form-meta">
                     <p className="muted">
-                      Отчётов: <strong className="number">{selectedReports.length}</strong>
+                      <UserRound size={16} aria-hidden="true" />{' '}
+                      {editing ? nameOf(editing.staff_id) : personName}
                     </p>
-                    <ul className="calendar-detail-list">
-                      {selectedReports.slice(0, 4).map((row) => (
-                        <li key={row.id}>
-                          <span className="shift-pill">
-                            {shiftNames[row.shift_type] ?? row.shift_type}
-                          </span>
-                          {isLeader && <span>{nameOf(row.staff_id)}</span>}
-                        </li>
-                      ))}
-                    </ul>
-                    {selectedReports.length === 1 ? (
+                    {editing && (
                       <button
                         type="button"
-                        className="button button-secondary"
-                        onClick={() => editReport(selectedReports[0])}
+                        className="button button-quiet"
+                        onClick={() => void loadAudit(editing.id)}
+                        aria-haspopup="dialog"
                       >
-                        Открыть отчёт <ArrowRight size={16} aria-hidden="true" />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="button button-secondary"
-                        onClick={openDayHistory}
-                      >
-                        Все отчёты дня <ArrowRight size={16} aria-hidden="true" />
+                        <Clock3 size={17} aria-hidden="true" /> История изменений
                       </button>
                     )}
-                  </>
+                  </div>
+                </section>
+                <ProfileFields model="alice" report={alice} onChange={setAlice} />
+                <ProfileFields model="alexa" report={alexa} onChange={setAlexa} />
+                {(Number(alice.endingBalance) < Number(alice.startingBalance) ||
+                  Number(alexa.endingBalance) < Number(alexa.startingBalance) ||
+                  Number(alice.customers) > Number(alice.sales) ||
+                  Number(alexa.customers) > Number(alexa.sales)) && (
+                  <p className="message message-warning" role="status">
+                    <CircleAlert size={18} aria-hidden="true" /> Проверьте показатели: баланс
+                    снизился или покупателей больше, чем продаж. Отчёт можно сохранить.
+                  </p>
                 )}
-              </MotionCard>
-            </div>
-          )}
-
-          {page === 'report' && (
-            <form
-              ref={formRef}
-              onSubmit={handleReport}
-              className="report-form"
-              onChange={() => setDirty(true)}
-              aria-busy={saving}
-            >
-              <section className="panel form-panel" aria-labelledby="shift-information">
-                <div className="section-title">
-                  <span className="section-icon">
-                    <CalendarDays size={18} aria-hidden="true" />
-                  </span>
-                  <h2 id="shift-information">Информация о смене</h2>
-                </div>
-                <div className="shift-fields">
-                  <label className="field">
-                    <span>Дата</span>
-                    <input
-                      type="date"
-                      value={date}
-                      disabled={!!editing}
-                      onChange={(event) => setDate(event.target.value)}
-                      required
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Смена</span>
-                    <select
-                      value={shift}
-                      onChange={(event) => setShift(event.target.value as Shift)}
-                    >
-                      {(Object.keys(shiftNames) as Shift[]).map((value) => (
-                        <option key={value} value={value}>
-                          {shiftNames[value]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <div className="form-meta">
-                  <p className="muted">
-                    <UserRound size={16} aria-hidden="true" />{' '}
-                    {editing ? nameOf(editing.staff_id) : personName}
+                {message && (
+                  <p
+                    className={`message${message.startsWith('Ошибка:') ? ' message-error' : ''}`}
+                    role={message.startsWith('Ошибка:') ? 'alert' : 'status'}
+                  >
+                    {message}
                   </p>
-                  {editing && (
-                    <button
-                      type="button"
-                      className="button button-quiet"
-                      onClick={() => void loadAudit(editing.id)}
-                      aria-haspopup="dialog"
-                    >
-                      <Clock3 size={17} aria-hidden="true" /> История изменений
-                    </button>
-                  )}
-                </div>
-              </section>
-              <ProfileFields model="alice" report={alice} onChange={setAlice} />
-              <ProfileFields model="alexa" report={alexa} onChange={setAlexa} />
-              {(Number(alice.endingBalance) < Number(alice.startingBalance) ||
-                Number(alexa.endingBalance) < Number(alexa.startingBalance) ||
-                Number(alice.customers) > Number(alice.sales) ||
-                Number(alexa.customers) > Number(alexa.sales)) && (
-                <p className="message message-warning" role="status">
-                  <CircleAlert size={18} aria-hidden="true" /> Проверьте показатели: баланс снизился
-                  или покупателей больше, чем продаж. Отчёт можно сохранить.
-                </p>
-              )}
-              {message && (
-                <p
-                  className={`message${message.startsWith('Ошибка:') ? ' message-error' : ''}`}
-                  role={message.startsWith('Ошибка:') ? 'alert' : 'status'}
-                >
-                  {message}
-                </p>
-              )}
-              <div className="form-footer">
-                <p className="muted">
-                  {dirty ? 'Есть несохранённые изменения.' : 'Один отчёт на сотрудника за дату.'}
-                </p>
-                <MotionButton type="submit" className="button button-primary" disabled={saving}>
-                  <ClipboardCheck size={18} aria-hidden="true" />{' '}
-                  {saving ? 'Сохраняем…' : editing ? 'Сохранить изменения' : 'Сохранить отчёт'}
-                </MotionButton>
-              </div>
-            </form>
-          )}
-        </SectionTransition>
-        <MotionDialog
-          open={page === 'report' && showAudit && !!editing}
-          title="История изменений"
-          onClose={closeAudit}
-        >
-          {auditLoading && (
-            <p role="status">
-              <span className="loading-dot" /> Загружаем историю…
-            </p>
-          )}
-          {auditError && (
-            <p className="message message-error" role="alert">
-              Журнал недоступен: {auditError}
-            </p>
-          )}
-          {!auditLoading && !auditError && !audit.length && (
-            <p className="muted">Изменений пока нет.</p>
-          )}
-          {audit.length > 0 && (
-            <ol className="audit-list">
-              {audit.map((entry) => (
-                <li key={entry.id}>
-                  <strong>{new Date(entry.changed_at).toLocaleString('ru-RU')}</strong>
+                )}
+                <div className="form-footer">
                   <p className="muted">
-                    Изменил: {entry.changed_by ? nameOf(entry.changed_by) : 'Система'}
+                    {dirty ? 'Есть несохранённые изменения.' : 'Один отчёт на сотрудника за дату.'}
                   </p>
-                  <dl>
-                    {Object.keys(entry.after_data ?? {})
-                      .filter(
-                        (key) =>
-                          entry.before_data?.[key] !== entry.after_data?.[key] &&
-                          key !== 'updated_at'
-                      )
-                      .map((key) => (
-                        <div key={key}>
-                          <dt>{key}</dt>
-                          <dd>
-                            {String(entry.before_data?.[key] ?? '—')} →{' '}
-                            {String(entry.after_data?.[key] ?? '—')}
-                          </dd>
-                        </div>
-                      ))}
-                  </dl>
-                </li>
-              ))}
-            </ol>
-          )}
-        </MotionDialog>
-      </main>
+                  <MotionButton type="submit" className="button button-primary" disabled={saving}>
+                    <ClipboardCheck size={18} aria-hidden="true" />{' '}
+                    {saving ? 'Сохраняем…' : editing ? 'Сохранить изменения' : 'Сохранить отчёт'}
+                  </MotionButton>
+                </div>
+              </form>
+            )}
+          </SectionTransition>
+          <MotionDialog
+            open={page === 'report' && showAudit && !!editing}
+            title="История изменений"
+            onClose={closeAudit}
+          >
+            {auditLoading && (
+              <p role="status">
+                <span className="loading-dot" /> Загружаем историю…
+              </p>
+            )}
+            {auditError && (
+              <p className="message message-error" role="alert">
+                Журнал недоступен: {auditError}
+              </p>
+            )}
+            {!auditLoading && !auditError && !audit.length && (
+              <p className="muted">Изменений пока нет.</p>
+            )}
+            {audit.length > 0 && (
+              <ol className="audit-list">
+                {audit.map((entry) => (
+                  <li key={entry.id}>
+                    <strong>{new Date(entry.changed_at).toLocaleString('ru-RU')}</strong>
+                    <p className="muted">
+                      Изменил: {entry.changed_by ? nameOf(entry.changed_by) : 'Система'}
+                    </p>
+                    <dl>
+                      {Object.keys(entry.after_data ?? {})
+                        .filter(
+                          (key) =>
+                            entry.before_data?.[key] !== entry.after_data?.[key] &&
+                            key !== 'updated_at'
+                        )
+                        .map((key) => (
+                          <div key={key}>
+                            <dt>{key}</dt>
+                            <dd>
+                              {String(entry.before_data?.[key] ?? '—')} →{' '}
+                              {String(entry.after_data?.[key] ?? '—')}
+                            </dd>
+                          </div>
+                        ))}
+                    </dl>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </MotionDialog>
+        </main>
+      </div>
     </div>
   )
 }

@@ -54,9 +54,14 @@ function button(node, label) {
   return find(node, (element) => {
     if (element.type !== 'button') return false
     if (element.props['aria-label'] === label) return true
-    const children = [element.props.children].flat()
-    return children.some((child) => typeof child === 'string' && child.trim() === label)
+    return textOf(element).trim() === label
   })
+}
+
+function textOf(node) {
+  if (Array.isArray(node)) return node.map(textOf).join('')
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  return node?.props ? textOf(node.props.children) : ''
 }
 
 function field(node, label) {
@@ -106,6 +111,7 @@ function hookHarness() {
       useCallback: (callback, deps) => useMemo(() => callback, deps),
       useEffect,
       useEffectEvent: (callback) => callback,
+      useLayoutEffect: useEffect,
       useMemo,
       useRef: (value) => useSlot(() => ({ current: value })),
       useState(initial) {
@@ -236,6 +242,28 @@ function setup() {
     react: harness.hooks,
     'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'fragment' },
     'lucide-react': new Proxy({}, { get: (_target, name) => name }),
+    'motion/react': {
+      AnimatePresence: 'fragment',
+      LayoutGroup: 'fragment',
+      LazyMotion: 'fragment',
+      domMax: {},
+      useReducedMotion: () => true,
+      useMotionValue(initial) {
+        const state = harness.hooks.useRef(initial)
+        return {
+          get: () => state.current,
+          set: (value) => {
+            state.current = value
+          }
+        }
+      },
+      useTransform: (value, transform) => ({ get: () => transform(value.get()) }),
+      animate(value, target) {
+        value.set(target)
+        return { stop: () => undefined }
+      }
+    },
+    'motion/react-m': new Proxy({}, { get: (_target, tag) => tag }),
     './lib/supabase': { supabase: client }
   }
   const modules = new Map()
@@ -379,11 +407,120 @@ function reportTable(app, tree) {
   return app.render(named(tree, 'ReportTable'))
 }
 
+function dashboard(app, tree) {
+  return app.render(named(tree, 'DashboardView'))
+}
+
+function modelStats(tree, label) {
+  const card = find(
+    tree,
+    (element) => element.type === 'section' && element.props['aria-label'] === label
+  )
+  assert.ok(card, 'Expected dashboard model card: ' + label)
+  const balance = find(card, (element) => element.type === 'strong')
+  const breakdown = find(card, (element) => element.type === 'dl')
+  const metrics = [breakdown.props.children].flat().map((entry) => {
+    return textOf(find(entry, (element) => element.type === 'dd'))
+  })
+  return [textOf(balance), ...metrics]
+}
+
+function dashboardCount(app, tree) {
+  const count = app.render(named(tree, 'ReportCount'))
+  return textOf(find(count, (element) => element.props.className === 'sr-only'))
+}
+
 function tableRows(tree) {
   const body = find(tree, (element) => element.type === 'tbody')
   assert.ok(body, 'Expected a report table')
   return [body.props.children].flat().filter((element) => element?.type === 'tr')
 }
+
+test('updates dashboard reports by period while keeping today activity scoped to today', async () => {
+  const app = setup()
+  const now = new Date()
+  const todayDate = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0')
+  ].join('-')
+  const [current, older] = syntheticReports('chatter', 2)
+  const reports = [
+    {
+      ...current,
+      report_date: todayDate,
+      alice_start_balance: 100,
+      alice_end_balance: 130,
+      alice_sales: 2,
+      alice_customers: 1,
+      alice_leads: 5,
+      alexa_start_balance: 200,
+      alexa_end_balance: 240,
+      alexa_sales: 4,
+      alexa_customers: 3,
+      alexa_leads: 7
+    },
+    {
+      ...older,
+      report_date: '2020-01-01',
+      alice_start_balance: 130,
+      alice_end_balance: 120,
+      alice_sales: 1,
+      alice_customers: 1,
+      alice_leads: 3,
+      alexa_start_balance: 240,
+      alexa_end_balance: 260,
+      alexa_sales: 2,
+      alexa_customers: 1,
+      alexa_leads: 4
+    }
+  ]
+  const { workspaceElement, dataRequests } = await startProfile(app, 'chatter', 'chatter')
+  dataRequests[0].complete(reports)
+  await turn()
+  app.requests.at(-1).complete([])
+  await turn()
+
+  const screen = () => app.render(workspaceElement)
+  const dashboardProps = () => named(screen(), 'DashboardView').props
+  assert.equal(dashboardProps().isLeader, false)
+  assert.equal(dashboardProps().period, 'month')
+  assert.deepEqual(
+    Array.from(dashboardProps().rows, (row) => row.id),
+    ['report-001']
+  )
+  assert.deepEqual(
+    Array.from(dashboardProps().todayReports, (row) => row.id),
+    ['report-001']
+  )
+
+  const monthView = dashboard(app, screen())
+  assert.equal(button(monthView, 'Месяц').props['aria-pressed'], true)
+  assert.equal(field(monthView, 'Сотрудник'), undefined)
+  assert.equal(dashboardCount(app, monthView), '1')
+  assert.deepEqual(modelStats(monthView, 'Alice'), ['$30.00', '2', '1', '5'])
+  assert.deepEqual(modelStats(monthView, 'Alexa'), ['$40.00', '4', '3', '7'])
+  button(monthView, 'Всё время').props.onClick()
+  assert.equal(dashboardProps().period, 'all')
+  assert.deepEqual(
+    Array.from(dashboardProps().rows, (row) => row.id),
+    ['report-001', 'report-002']
+  )
+  assert.deepEqual(
+    Array.from(dashboardProps().todayReports, (row) => row.id),
+    ['report-001']
+  )
+  const allTimeView = dashboard(app, screen())
+  assert.equal(button(allTimeView, 'Всё время').props['aria-pressed'], true)
+  assert.equal(dashboardCount(app, allTimeView), '2')
+  assert.deepEqual(modelStats(allTimeView, 'Alice'), ['$20.00', '3', '2', '8'])
+  assert.deepEqual(modelStats(allTimeView, 'Alexa'), ['$60.00', '6', '4', '11'])
+
+  button(screen(), 'Создать отчёт').props.onClick()
+  assert.ok(form(screen()))
+  assert.equal(named(screen(), 'DashboardView'), undefined)
+  app.dispose()
+})
 
 test('paginates filtered history while exporting every matching report', async () => {
   const app = setup()
@@ -469,6 +606,7 @@ test('gates team navigation by role and follows the last selected section', asyn
   await turn()
 
   const screen = () => app.render(leader.workspaceElement)
+  assert.equal(field(dashboard(app, screen()), 'Сотрудник').props.value, 'all')
   button(screen(), 'Команда').props.onClick()
   const directory = () => app.render(named(screen(), 'TeamDirectory'))
   const firstTeamPage = directory()
@@ -604,7 +742,7 @@ test('isolates delayed requests, refreshed tokens and drafts across accounts', a
 
   const latest = named(app.app(), 'Workspace')
   assert.equal(latest.props.scope.userId, 'chatter')
-  assert.equal(button(app.render(latest), 'Продолжить'), undefined)
+  assert.equal(button(dashboard(app, app.render(latest)), 'Продолжить'), undefined)
   assert.equal(button(app.render(latest), 'Команда'), undefined)
   assert.deepEqual(app.draftReads, ['aura-draft-v05-lead', 'aura-draft-v05-chatter'])
   assert.equal(app.storage.get('aura-draft-v05-lead'), syntheticDraft)
@@ -616,7 +754,7 @@ async function reportForm(app, userId) {
   const { workspaceElement, dataRequests } = await startProfile(app, userId, 'chatter')
   dataRequests[0].complete([])
   await turn()
-  button(app.render(workspaceElement), 'Продолжить').props.onClick()
+  button(dashboard(app, app.render(workspaceElement)), 'Продолжить').props.onClick()
   return form(app.render(workspaceElement))
 }
 
