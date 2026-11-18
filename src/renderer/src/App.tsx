@@ -5,7 +5,6 @@ import {
   useMemo,
   useState,
   useRef,
-  type CSSProperties,
   type FormEvent,
   type JSX
 } from 'react'
@@ -19,6 +18,7 @@ import {
   ClipboardCheck,
   UserRound,
   ArrowLeft,
+  ArrowRight,
   History,
   BarChart3,
   Users,
@@ -30,10 +30,22 @@ import {
   Bell,
   Save,
   X,
-  Clock3
+  Clock3,
+  Activity,
+  FileText,
+  SlidersHorizontal,
+  CircleAlert,
+  Diamond
 } from 'lucide-react'
 import { loadReports, loadTeam, type ReportRow, type Shift, type Staff } from './lib/report-data'
 import ModelAnalytics from './components/ModelAnalytics'
+import {
+  MotionProvider,
+  SectionTransition,
+  MotionButton,
+  MotionCard,
+  MotionDialog
+} from './components/WorkspaceMotion'
 import {
   createReportsCsv,
   dateLabel,
@@ -47,7 +59,13 @@ import {
   type ReportPeriod
 } from './lib/report-view'
 
-type ProfileReport = { startingBalance: string; endingBalance: string; sales: string; customers: string; leads: string }
+type ProfileReport = {
+  startingBalance: string
+  endingBalance: string
+  sales: string
+  customers: string
+  leads: string
+}
 type Page = 'dashboard' | 'report' | 'history' | 'analytics' | 'calendar' | 'team'
 const toForm = (r: ReportRow, model: 'alice' | 'alexa'): ProfileReport => ({
   startingBalance: String(r[`${model}_start_balance`] ?? ''),
@@ -67,33 +85,85 @@ const today = (): string => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-const colors = { bg: '#0e1018', panel: '#171b27', border: '#2a3041', muted: '#9ca7bf', accent: '#8b6cff', text: '#f6f6fc' }
-const fieldStyle: CSSProperties = { width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '13px 14px', background: '#10141f', border: `1px solid ${colors.border}`, borderRadius: 10, color: colors.text, fontSize: 14, outlineColor: colors.accent, colorScheme: 'dark' }
-const panelStyle: CSSProperties = { background: colors.panel, border: `1px solid ${colors.border}`, borderRadius: 18, padding: 26 }
-const primaryButton: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 9, padding: '12px 18px', background: colors.accent, color: 'white', border: 0, borderRadius: 10, cursor: 'pointer', fontSize: 14, fontWeight: 650 }
-const secondaryButton: CSSProperties = { ...primaryButton, background: '#24293a', color: '#d6dcf0', border: `1px solid ${colors.border}` }
+const navigation = [
+  { page: 'dashboard', label: 'Главная', icon: LayoutDashboard },
+  { page: 'history', label: 'История отчётов', icon: History },
+  { page: 'analytics', label: 'Аналитика', icon: BarChart3 },
+  { page: 'calendar', label: 'Календарь', icon: CalendarDays },
+  { page: 'team', label: 'Команда', icon: Users }
+] as const
 
-function ProfileFields({ title, report, onChange }: { title: string; report: ProfileReport; onChange: (next: ProfileReport) => void }): JSX.Element {
-  const fields: { key: keyof ProfileReport; label: string; step: string; min?: string }[] = [
-    { key: 'startingBalance', label: 'Начальный баланс ($)', step: '0.01', min: '0' },
-    { key: 'endingBalance', label: 'Конечный баланс ($)', step: '0.01', min: '0' },
-    { key: 'sales', label: 'Продажи', step: '1', min: '0' },
-    { key: 'customers', label: 'Покупатели', step: '1', min: '0' },
-    { key: 'leads', label: 'Лиды за смену', step: '1', min: '0' }
-  ]
-  return <section style={panelStyle}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
-      <span style={{ width: 9, height: 9, background: title === 'Alice' ? '#aa8cff' : '#5dc8d9', borderRadius: '50%' }} />
-      <h2 style={{ margin: 0, fontSize: 22 }}>{title}</h2>
-      <span style={{ color: colors.muted, fontSize: 12, marginLeft: 'auto' }}>5 показателей</span>
+const pageTitles: Record<Page, string> = {
+  dashboard: 'Обзор результатов',
+  history: 'История отчётов',
+  analytics: 'Аналитика',
+  calendar: 'Календарь смен',
+  team: 'Команда',
+  report: 'Новый отчёт'
+}
+
+const shiftNames: Record<Shift, string> = {
+  morning: 'Утренняя',
+  day: 'Дневная',
+  night: 'Ночная'
+}
+
+const profileFields: { key: keyof ProfileReport; label: string; step: string }[] = [
+  { key: 'startingBalance', label: 'Начальный баланс ($)', step: '0.01' },
+  { key: 'endingBalance', label: 'Конечный баланс ($)', step: '0.01' },
+  { key: 'sales', label: 'Продажи', step: '1' },
+  { key: 'customers', label: 'Покупатели', step: '1' },
+  { key: 'leads', label: 'Лиды за смену', step: '1' }
+]
+
+function Brand(): JSX.Element {
+  return (
+    <div className="brand">
+      <span className="brand-mark" aria-hidden="true">
+        <Diamond size={19} />
+      </span>
+      <span className="brand-word">
+        AURA<small>Reporting System</small>
+      </span>
     </div>
-    <div className="aura-fields">
-      {fields.map(field => <label key={field.key} style={{ display: 'grid', gap: 9, minWidth: 0 }}>
-        <span style={{ color: '#b5bfd5', fontSize: 13 }}>{field.label}</span>
-        <input type="number" min={field.min} step={field.step} value={report[field.key]} onChange={e => onChange({ ...report, [field.key]: e.target.value })} placeholder="0" required style={fieldStyle} />
-      </label>)}
-    </div>
-  </section>
+  )
+}
+
+function ProfileFields({
+  model,
+  report,
+  onChange
+}: {
+  model: ModelName
+  report: ProfileReport
+  onChange: (next: ProfileReport) => void
+}): JSX.Element {
+  const modelName = model === 'alice' ? 'Alice' : 'Alexa'
+  return (
+    <fieldset className={`panel form-model model-${model}`}>
+      <legend>
+        <span className="model-dot" />
+        {modelName}
+      </legend>
+      <div className="form-metrics">
+        {profileFields.map(({ key, label, step }) => (
+          <label key={key} className="field">
+            <span>{label}</span>
+            <input
+              aria-label={`${modelName} — ${label}`}
+              type="number"
+              min="0"
+              step={step}
+              value={report[key]}
+              onChange={(event) => onChange({ ...report, [key]: event.target.value })}
+              placeholder="0"
+              required
+            />
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
 }
 
 type SessionScope = {
@@ -186,16 +256,23 @@ export default function App(): JSX.Element {
   }, [])
 
   return (
-    <>
-      <AppStyles />
+    <MotionProvider>
       {checkingAuth ? (
-        <div style={centerStyle}>Проверяем авторизацию...</div>
+        <main className="center-stage">
+          <div className="panel startup-panel" role="status">
+            <Brand />
+            <p>
+              <span className="loading-dot" />
+              Проверяем авторизацию…
+            </p>
+          </div>
+        </main>
       ) : account ? (
         <Workspace key={account.scope.generation} scope={account.scope} email={account.email} />
       ) : (
         <LoginForm authError={authError} />
       )}
-    </>
+    </MotionProvider>
   )
 }
 
@@ -229,45 +306,47 @@ function LoginForm({ authError }: { authError: string }): JSX.Element {
 
   const visibleError = error ?? authError
   return (
-    <div style={centerStyle}>
-      <form
-        onSubmit={handleLogin}
-        style={{ ...panelStyle, width: 400, maxWidth: 'calc(100% - 32px)', padding: 32 }}
-      >
-        <h1 style={{ fontSize: 34, margin: '0 0 6px' }}>
-          AURA<span style={{ color: colors.accent }}>.</span>
-        </h1>
-        <p style={{ color: colors.muted, margin: '0 0 30px' }}>Reporting System</p>
-        <div style={{ display: 'grid', gap: 14 }}>
-          <input
-            name="email"
-            type="email"
-            autoComplete="username"
-            placeholder="Электронная почта"
-            required
-            style={fieldStyle}
-          />
-          <input
-            ref={passwordRef}
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            placeholder="Пароль"
-            disabled={loading}
-            required
-            style={fieldStyle}
-          />
-          <button type="submit" disabled={loading} style={primaryButton}>
-            {loading ? 'Входим...' : 'Войти'}
-          </button>
-        </div>
-        {visibleError && (
-          <p role="alert" style={{ color: '#ff9898', overflowWrap: 'anywhere' }}>
-            {visibleError}
+    <main className="center-stage login-stage">
+      <MotionCard className="login-frame">
+        <div className="login-brand-panel">
+          <Brand />
+          <p>
+            Отчётность по сменам
+            <br />и аналитика команды.
           </p>
-        )}
-      </form>
-    </div>
+        </div>
+        <form onSubmit={handleLogin} className="login-form" aria-busy={loading}>
+          <h1>Вход в AURA</h1>
+          <label className="field">
+            <span>Электронная почта</span>
+            <input name="email" type="email" autoComplete="username" required />
+          </label>
+          <label className="field">
+            <span>Пароль</span>
+            <input
+              ref={passwordRef}
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              disabled={loading}
+              required
+            />
+          </label>
+          {visibleError && (
+            <p className="message message-error" role="alert">
+              {visibleError}
+            </p>
+          )}
+          <MotionButton
+            type="submit"
+            className="button button-primary login-submit"
+            disabled={loading}
+          >
+            {loading ? 'Входим…' : 'Войти'} <ArrowRight size={17} aria-hidden="true" />
+          </MotionButton>
+        </form>
+      </MotionCard>
+    </main>
   )
 }
 
@@ -279,7 +358,268 @@ function hasSavedDraft(key: string): boolean {
   }
 }
 
-function Workspace({ scope, email }: { scope: SessionScope; email: string | undefined }): JSX.Element {
+const reportPageSize = 25
+const teamPageSize = 12
+
+function Pagination({
+  page,
+  total,
+  pageSize,
+  label,
+  onChange
+}: {
+  page: number
+  total: number
+  pageSize: number
+  label: 'отчётов' | 'сотрудников'
+  onChange: (page: number) => void
+}): JSX.Element | null {
+  const pageCount = Math.ceil(total / pageSize)
+  if (pageCount <= 1) return null
+  return (
+    <nav className="pagination" aria-label={`Страницы ${label}`}>
+      <span className="pagination-summary" aria-live="polite">
+        {page * pageSize + 1}–{Math.min(total, (page + 1) * pageSize)} из {total}
+      </span>
+      <div className="pagination-controls">
+        <button
+          type="button"
+          className="button button-quiet icon-button"
+          aria-label={`Предыдущая страница ${label}`}
+          disabled={page === 0}
+          onClick={() => onChange(page - 1)}
+        >
+          <ChevronLeft size={18} aria-hidden="true" />
+        </button>
+        <span aria-label={`Страница ${page + 1} из ${pageCount}`}>
+          {page + 1} / {pageCount}
+        </span>
+        <button
+          type="button"
+          className="button button-quiet icon-button"
+          aria-label={`Следующая страница ${label}`}
+          disabled={page + 1 === pageCount}
+          onClick={() => onChange(page + 1)}
+        >
+          <ChevronRight size={18} aria-hidden="true" />
+        </button>
+      </div>
+    </nav>
+  )
+}
+
+function ReportTable({
+  rows,
+  leader,
+  label,
+  loading,
+  paginate,
+  nameOf,
+  onEdit
+}: {
+  rows: ReportRow[]
+  leader: boolean
+  label: string
+  loading: boolean
+  paginate?: boolean
+  nameOf: (id: string) => string
+  onEdit: (row: ReportRow) => void
+}): JSX.Element {
+  const [requestedPage, setRequestedPage] = useState(0)
+  const page = Math.min(requestedPage, Math.max(0, Math.ceil(rows.length / reportPageSize) - 1))
+  const visibleRows = paginate
+    ? rows.slice(page * reportPageSize, (page + 1) * reportPageSize)
+    : rows
+
+  if (!rows.length) {
+    return (
+      <div className="empty-state" role="status">
+        <FileText size={25} aria-hidden="true" />
+        <p>{loading ? 'Загружаем отчёты…' : 'Отчёты не найдены'}</p>
+        {!loading && <span>Попробуйте изменить период или другие фильтры.</span>}
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div className="table-scroll" role="region" aria-label={label} tabIndex={0}>
+        <table className="report-table" aria-label={label}>
+          <thead>
+            <tr>
+              <th scope="col">Дата</th>
+              <th scope="col">Смена</th>
+              {leader && <th scope="col">Сотрудник</th>}
+              <th scope="col" className="number model-alice">
+                Alice
+              </th>
+              <th scope="col" className="number model-alexa">
+                Alexa
+              </th>
+              <th scope="col" className="number">
+                Продажи
+              </th>
+              <th scope="col" className="number">
+                Лиды
+              </th>
+              <th scope="col" className="table-action">
+                <span className="sr-only">Действия</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((row) => (
+              <tr key={row.id}>
+                <th scope="row">
+                  <time dateTime={row.report_date}>{dateLabel(row.report_date)}</time>
+                </th>
+                <td>
+                  <span className="shift-pill">{shiftNames[row.shift_type] ?? row.shift_type}</span>
+                </td>
+                {leader && (
+                  <td className="employee-cell">
+                    <span className="employee-name" title={nameOf(row.staff_id)}>
+                      {nameOf(row.staff_id)}
+                    </span>
+                  </td>
+                )}
+                <td className="number model-alice">{money(revenue(row, 'alice'))}</td>
+                <td className="number model-alexa">{money(revenue(row, 'alexa'))}</td>
+                <td className="number">
+                  {Number(row.alice_sales ?? 0) + Number(row.alexa_sales ?? 0)}
+                </td>
+                <td className="number">
+                  {Number(row.alice_leads ?? 0) + Number(row.alexa_leads ?? 0)}
+                </td>
+                <td className="table-action">
+                  <button
+                    type="button"
+                    className="button button-quiet edit-button"
+                    aria-label={`Изменить отчёт за ${dateLabel(row.report_date)}${leader ? `, ${nameOf(row.staff_id)}` : ''}`}
+                    onClick={() => onEdit(row)}
+                  >
+                    <Pencil size={15} aria-hidden="true" /> Изменить
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {paginate && (
+        <Pagination
+          page={page}
+          total={rows.length}
+          pageSize={reportPageSize}
+          label="отчётов"
+          onChange={setRequestedPage}
+        />
+      )}
+    </>
+  )
+}
+
+function TeamDirectory({
+  team,
+  rows,
+  onOpen,
+  onAnalyze
+}: {
+  team: Staff[]
+  rows: ReportRow[]
+  onOpen: (id: string) => void
+  onAnalyze: (id: string) => void
+}): JSX.Element {
+  const [requestedPage, setRequestedPage] = useState(0)
+  const page = Math.min(requestedPage, Math.max(0, Math.ceil(team.length / teamPageSize) - 1))
+  const summaries = useMemo(() => {
+    const byStaff = new Map<string, { shifts: number; lastDate: string }>()
+    for (const row of rows) {
+      const summary = byStaff.get(row.staff_id) ?? { shifts: 0, lastDate: row.report_date }
+      summary.shifts += 1
+      if (row.report_date > summary.lastDate) summary.lastDate = row.report_date
+      byStaff.set(row.staff_id, summary)
+    }
+    return byStaff
+  }, [rows])
+
+  return (
+    <section aria-labelledby="team-directory-heading">
+      <div className="section-heading">
+        <h2 id="team-directory-heading">Сотрудники</h2>
+        <span className="muted number">{team.length}</span>
+      </div>
+      {team.length ? (
+        <ul className="team-grid">
+          {team.slice(page * teamPageSize, (page + 1) * teamPageSize).map((member) => {
+            const summary = summaries.get(member.id)
+            const memberName = member.display_name || 'Сотрудник'
+            return (
+              <li key={member.id} className="panel team-member">
+                <div className="team-identity">
+                  <span className="avatar" aria-hidden="true">
+                    {memberName.slice(0, 1).toUpperCase()}
+                  </span>
+                  <div>
+                    <h3>{memberName}</h3>
+                    <span className="role-pill">
+                      {member.role === 'leader' ? 'Руководитель' : 'Чаттер'}
+                    </span>
+                  </div>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Смен</dt>
+                    <dd>{summary?.shifts ?? 0}</dd>
+                  </div>
+                  <div>
+                    <dt>Последний отчёт</dt>
+                    <dd>{summary ? dateLabel(summary.lastDate) : '—'}</dd>
+                  </div>
+                </dl>
+                <div className="button-group team-actions">
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    onClick={() => onOpen(member.id)}
+                    aria-label={`Отчёты сотрудника ${memberName}`}
+                  >
+                    Отчёты <ArrowRight size={16} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    onClick={() => onAnalyze(member.id)}
+                    aria-label={`Аналитика сотрудника ${memberName}`}
+                  >
+                    Аналитика <BarChart3 size={16} aria-hidden="true" />
+                  </button>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      ) : (
+        <p className="empty-state">Список сотрудников пока пуст.</p>
+      )}
+      <Pagination
+        page={page}
+        total={team.length}
+        pageSize={teamPageSize}
+        label="сотрудников"
+        onChange={setRequestedPage}
+      />
+    </section>
+  )
+}
+
+function Workspace({
+  scope,
+  email
+}: {
+  scope: SessionScope
+  email: string | undefined
+}): JSX.Element {
   const userId = scope.userId
   const signal = scope.controller.signal
   const draftKey = `aura-draft-v05-${userId}`
@@ -304,14 +644,26 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
   const [search, setSearch] = useState('')
   const [filterShift, setFilterShift] = useState('all')
   const [calendarMonth, setCalendarMonth] = useState(today().slice(0, 7))
+  const [selectedDay, setSelectedDay] = useState(today)
   const [editing, setEditing] = useState<ReportRow | null>(null)
   const [dirty, setDirty] = useState(false)
   const [toast, setToast] = useState('')
   const [draftFound, setDraftFound] = useState(() => hasSavedDraft(draftKey))
-  const [audit, setAudit] = useState<{id:string;changed_at:string;changed_by:string|null;before_data:Record<string,unknown>|null;after_data:Record<string,unknown>|null}[]>([])
+  const [audit, setAudit] = useState<
+    {
+      id: string
+      changed_at: string
+      changed_by: string | null
+      before_data: Record<string, unknown> | null
+      after_data: Record<string, unknown> | null
+    }[]
+  >([])
   const [auditError, setAuditError] = useState('')
+  const [auditLoading, setAuditLoading] = useState(false)
   const [showAudit, setShowAudit] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
+  const mainRef = useRef<HTMLElement>(null)
+  const lastPage = useRef(page)
   const refreshRequest = useRef<AbortController | null>(null)
   const auditRequest = useRef(0)
   const savePending = useRef(false)
@@ -382,19 +734,41 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
   }
 
   const staffById = useMemo(() => new Map(team.map((member) => [member.id, member])), [team])
+  const detailedFilters = page === 'history' || page === 'team'
+  const visibleSearch = detailedFilters ? search : ''
+  const visibleShift = detailedFilters ? filterShift : 'all'
   const filtered = useMemo(
-    () => filterReports(reports, { period, person, shift: filterShift, search }, staffById, new Date()),
-    [reports, period, person, filterShift, search, staffById]
+    () =>
+      filterReports(
+        reports,
+        { period, person, shift: visibleShift, search: visibleSearch },
+        staffById,
+        new Date()
+      ),
+    [reports, period, person, visibleShift, visibleSearch, staffById]
   )
   const calendarReports = useMemo(
     () => (page === 'calendar' ? indexReportsByDate(reports, person) : undefined),
     [page, reports, person]
   )
-  const totals = useMemo(() => ({ shifts: filtered.length, alice: filtered.reduce((a,r) => a + revenue(r,'alice'),0), alexa: filtered.reduce((a,r) => a + revenue(r,'alexa'),0), sales: sum(filtered,'alice_sales') + sum(filtered,'alexa_sales'), leads: sum(filtered,'alice_leads') + sum(filtered,'alexa_leads'), customers: sum(filtered,'alice_customers') + sum(filtered,'alexa_customers') }), [filtered])
+  const shiftsByType = useMemo(() => {
+    if (page !== 'dashboard' && page !== 'team') return null
+    const counts = { morning: 0, day: 0, night: 0 }
+    for (const row of filtered) {
+      const shiftType = row.shift_type
+      if (Object.hasOwn(counts, shiftType)) counts[shiftType] += 1
+    }
+    return counts
+  }, [filtered, page])
   const nameOf = (id: string): string =>
     id === staff?.id
       ? staff?.display_name || email || 'Я'
-      : (staffById.get(id)?.display_name ?? 'Сотрудник')
+      : staffById.get(id)?.display_name || 'Сотрудник'
+  useEffect(() => {
+    if (lastPage.current === page) return
+    lastPage.current = page
+    mainRef.current?.focus()
+  }, [page])
   useEffect(() => {
     if (signal.aborted || !dirty || page !== 'report' || editing) return
     try {
@@ -405,6 +779,7 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
   }, [signal, dirty, page, draftKey, editing, date, shift, alice, alexa])
   const handleShortcut = useEffectEvent((e: KeyboardEvent): void => {
     if (signal.aborted || !staff || !(e.ctrlKey || e.metaKey)) return
+    if (document.querySelector('dialog[open]')) return
     if (e.key.toLowerCase() === 's' && page === 'report') {
       e.preventDefault()
       formRef.current?.requestSubmit()
@@ -442,6 +817,7 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
     const request = ++auditRequest.current
     const isCurrent = (): boolean => !signal.aborted && request === auditRequest.current
     setShowAudit(true)
+    setAuditLoading(true)
     setAuditError('')
     setAudit([])
     try {
@@ -459,7 +835,14 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
       else setAudit(data ?? [])
     } catch (err) {
       if (isCurrent()) setAuditError(err instanceof Error ? err.message : String(err))
+    } finally {
+      if (isCurrent()) setAuditLoading(false)
     }
+  }
+  function closeAudit(): void {
+    auditRequest.current++
+    setShowAudit(false)
+    setAuditLoading(false)
   }
   function navigate(next: Page): void {
     if (signal.aborted) return
@@ -639,7 +1022,9 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
   function changeMonth(delta: number): void {
     const [y, m] = calendarMonth.split('-').map(Number)
     const d = new Date(y, m - 1 + delta, 1)
-    setCalendarMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    setCalendarMonth(month)
+    setSelectedDay(`${month}-01`)
   }
   function calendarCells(): string[] {
     const [y, m] = calendarMonth.split('-').map(Number)
@@ -647,172 +1032,726 @@ function Workspace({ scope, email }: { scope: SessionScope; email: string | unde
     const days = new Date(y, m, 0).getDate()
     return [
       ...Array(offset).fill(''),
-      ...Array.from({ length: days }, (_, i) => `${calendarMonth}-${String(i + 1).padStart(2, '0')}`)
+      ...Array.from(
+        { length: days },
+        (_, i) => `${calendarMonth}-${String(i + 1).padStart(2, '0')}`
+      )
     ] as string[]
   }
-  function renderRows(rows: ReportRow[]): JSX.Element { return <div className="aura-table-wrap"><table className="aura-table"><thead><tr><th>Дата</th><th>Смена</th>{isLeader && <th>Сотрудник</th>}<th>Alice</th><th>Alexa</th><th>Продажи</th><th>Лиды</th><th>Действие</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{dateLabel(r.report_date)}</td><td>{shiftLabels[r.shift_type] ?? r.shift_type}</td>{isLeader && <td>{nameOf(r.staff_id)}</td>}<td style={{color:'#aa8cff'}}>{money(revenue(r,'alice'))}</td><td style={{color:'#5dc8d9'}}>{money(revenue(r,'alexa'))}</td><td>{Number(r.alice_sales??0)+Number(r.alexa_sales??0)}</td><td>{Number(r.alice_leads??0)+Number(r.alexa_leads??0)}</td><td><button type="button" style={{...secondaryButton,padding:'7px 10px'}} onClick={()=>editReport(r)}><Pencil size={14}/> Изменить</button></td></tr>)}{rows.length===0 && <tr><td colSpan={isLeader ? 8 : 7} style={{color:colors.muted}}>Отчётов за выбранный период пока нет.</td></tr>}</tbody></table></div> }
+  function openDayHistory(): void {
+    if (signal.aborted) return
+    setPeriod('all')
+    setFilterShift('all')
+    setSearch(selectedDay)
+    navigate('history')
+  }
+
+  function openMemberHistory(id: string): void {
+    if (signal.aborted) return
+    setPerson(id)
+    setSearch('')
+    navigate('history')
+  }
+
+  function openMemberAnalytics(id: string): void {
+    if (signal.aborted) return
+    setPerson(id)
+    navigate('analytics')
+  }
+
+  const selectedReports = calendarReports?.get(selectedDay) ?? []
+  const dateToday = today()
+  const todayReports = useMemo(
+    () =>
+      page === 'dashboard'
+        ? reports.filter(
+            (row) => row.report_date === dateToday && (person === 'all' || row.staff_id === person)
+          )
+        : [],
+    [page, reports, dateToday, person]
+  )
+  const todaysStaff = [...new Set(todayReports.map((row) => row.staff_id))]
+  const reportTableKey = JSON.stringify([period, person, visibleShift, visibleSearch])
 
   if (!staff)
     return (
-      <div style={centerStyle}>
-        <section style={panelStyle}>
-          {dataError ? <p role="alert">{dataError}</p> : <p role="status">Загружаем профиль...</p>}
-          {error && <p role="alert">{error}</p>}
-          {dataError && (
-            <button type="button" onClick={retryProfile} style={secondaryButton}>
-              <RefreshCw size={18} /> Повторить загрузку
-            </button>
+      <main className="center-stage">
+        <section className="panel startup-panel">
+          <Brand />
+          {dataError ? (
+            <p className="message message-error" role="alert">
+              {dataError}
+            </p>
+          ) : (
+            <p role="status">
+              <span className="loading-dot" />
+              Загружаем профиль…
+            </p>
           )}
-          <button type="button" onClick={handleLogout} style={secondaryButton}>
-            <LogOut size={18} /> Выйти
-          </button>
+          {error && (
+            <p className="message message-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="button-group">
+            {dataError && (
+              <MotionButton type="button" onClick={retryProfile} className="button button-primary">
+                <RefreshCw size={17} aria-hidden="true" /> Повторить загрузку
+              </MotionButton>
+            )}
+            <button type="button" onClick={handleLogout} className="button button-secondary">
+              <LogOut size={17} aria-hidden="true" /> Выйти
+            </button>
+          </div>
         </section>
-      </div>
+      </main>
     )
 
-  return <div className="aura-layout" style={{ background: colors.bg, color: colors.text, fontFamily: 'Inter, Segoe UI, Arial, sans-serif' }}>
-    <aside className="aura-sidebar">
-      <div style={{ marginBottom: 25 }}>
-        <h1 style={{ fontSize: 30, margin: '0 0 6px', letterSpacing: -1 }}>AURA<span style={{ color: colors.accent }}>.</span></h1>
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.1, color: colors.muted }}>REPORTING SYSTEM</span>
-      </div>
-      {([['dashboard','Главная',LayoutDashboard],['history','История отчётов',History],['analytics','Аналитика',BarChart3],['calendar','Календарь',CalendarDays],...(isLeader ? [['team','Команда',Users]] : [])] as [Page,string,typeof LayoutDashboard][]).map(([target,label,Icon]) => <button key={target} type="button" onClick={() => navigate(target)} style={{ ...navButton, background: page === target ? '#302849' : 'transparent', color: page === target ? '#c3b3ff' : '#abb5ca' }}><Icon size={18}/>{label}</button>)}
-      <div className="aura-sidebar-spacer" style={{ flex: 1 }} />
-      <div style={{ borderTop: `1px solid ${colors.border}`, padding: '16px 10px 6px', display: 'flex', alignItems: 'center', gap: 9, fontSize: 12, color: colors.muted, overflowWrap: 'anywhere', minWidth: 0 }}>
-        <UserRound size={17} style={{ flexShrink: 0 }} /><span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{email}</span>
-      </div>
-      <button type="button" onClick={handleLogout} style={navButton}><LogOut size={18} /> Выйти</button>
-      {error && <p style={{ color: '#ff9898', fontSize: 12 }}>{error}</p>}
-    </aside>
+  const title = page === 'report' && editing ? 'Редактирование отчёта' : pageTitles[page]
+  const roleName = isLeader ? 'Руководитель' : 'Чаттер'
+  const personName = staff.display_name || email || 'Пользователь'
+  const kpis = [
+    ['Отчёты за период', filtered.length],
+    ['Утренние смены', shiftsByType?.morning ?? 0],
+    ['Дневные смены', shiftsByType?.day ?? 0],
+    ['Ночные смены', shiftsByType?.night ?? 0]
+  ]
 
-    <main className="aura-content">
-      {toast && <div className="aura-toast" role="status"><div style={{display:'flex',alignItems:'center',gap:12}}><Bell size={18}/><span>{toast}</span><button type="button" onClick={()=>setToast('')} style={{...secondaryButton,padding:6,marginLeft:'auto'}}><X size={14}/></button></div></div>}
-      {dataError && <div role="alert" style={{...panelStyle, color:'#ff9999', marginBottom:20}}>Ошибка загрузки: {dataError}</div>}
-      {page !== 'report' && <div style={{width:'100%'}}> 
-        <div style={eyebrow}>{isLeader ? 'Панель руководителя' : 'Личный кабинет'} · {staff?.display_name ?? 'AURA'}</div>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-          <h1 style={heading}>{page === 'dashboard' ? 'Обзор результатов' : page === 'history' ? 'История отчётов' : page === 'analytics' ? 'Аналитика' : page === 'calendar' ? 'Календарь смен' : 'Команда'}</h1>
-          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}><button type="button" onClick={() => void refreshData(staff.role)} disabled={fetching} style={secondaryButton}><RefreshCw size={16}/>{fetching ? 'Загрузка...' : 'Обновить'}</button><button type="button" onClick={openReport} style={primaryButton}><FilePlus2 size={16}/> Создать отчёт</button></div>
-        </div>
-        <p style={subtitle}>{isLeader ? 'Результаты команды и управление отчётами.' : 'Твои смены, результаты и история.'}</p>
-        {page !== 'calendar' && <div className="aura-filter">
-          <select aria-label="Период" value={period} onChange={e => setPeriod(e.target.value as typeof period)} style={fieldStyle}><option value="7">Последние 7 дней</option><option value="30">Последние 30 дней</option><option value="month">Текущий месяц</option><option value="all">Всё время</option></select>
-          {isLeader && <select aria-label="Сотрудник" value={person} onChange={e => setPerson(e.target.value)} style={fieldStyle}><option value="all">Все сотрудники</option>{team.map(t => <option key={t.id} value={t.id}>{t.display_name}</option>)}</select>}
-          {(page === 'history' || page === 'team') && <><select aria-label="Смена" value={filterShift} onChange={e => setFilterShift(e.target.value)} style={fieldStyle}><option value="all">Все смены</option>{(Object.keys(shiftLabels) as Shift[]).map(s => <option key={s} value={s}>{shiftLabels[s]}</option>)}</select><input aria-label="Поиск" placeholder="Поиск по дате или имени" value={search} onChange={e => setSearch(e.target.value)} style={fieldStyle}/></>}
-        </div>}
-        {(page === 'dashboard' || page === 'team') && <div className="aura-stats">
-          {[['Выручка (изменение балансов)',money(totals.alice + totals.alexa)],['Смен',String(totals.shifts)],['Продажи',String(totals.sales)],['Лиды',String(totals.leads)],['Покупатели',String(totals.customers)]].map(([label,value]) => <section key={label} style={{...panelStyle,padding:20}}><div style={{fontSize:12,color:colors.muted,marginBottom:12}}>{label}</div><div style={{fontSize:27,fontWeight:750}}>{value}</div></section>)}
-        </div>}
-        {page === 'dashboard' && <>
-          {draftFound && <section style={{...panelStyle,marginBottom:22,borderColor:'#8b6cff'}}><div className="aura-section-header"><div><h2 style={{margin:0}}>Незавершённый отчёт</h2><p style={subtitle}>Есть локально сохранённый черновик.</p></div><button type="button" onClick={restoreDraft} style={primaryButton}><Save size={16}/> Продолжить</button></div></section>}
-          <div className="aura-dashboard-grid">
-            <section style={panelStyle}>
-              <div className="aura-section-header"><h2 style={{margin:0,fontSize:20}}>Последние отчёты</h2><button type="button" style={{...secondaryButton,padding:'8px 12px'}} onClick={()=>navigate('history')}>Вся история</button></div>
-              {renderRows(filtered.slice(0,5))}
-            </section>
-            <section style={panelStyle}>
-              <div className="aura-section-header"><h2 style={{margin:0,fontSize:20}}>Активность за сегодня</h2><CalendarDays size={19} color={colors.accent}/></div>
-              <p style={subtitle}>Отчётов за {dateLabel(today())}</p>
-              <div style={{fontSize:36,fontWeight:750,margin:'12px 0'}}>{reports.filter(r=>r.report_date===today() && (person==='all'||r.staff_id===person)).length}</div>
-              {isLeader && <><p style={{...subtitle,marginBottom:10}}>Сотрудники, сдавшие отчёт сегодня:</p>{[...new Set(reports.filter(r=>r.report_date===today()).map(r=>r.staff_id))].map(id=><div key={id} style={{padding:'7px 0',borderBottom:'1px solid #2a3041'}}>{nameOf(id)}</div>)}{!reports.some(r=>r.report_date===today()) && <p style={subtitle}>Пока никто не отчитался.</p>}</>}
-              <button type="button" style={{...secondaryButton,marginTop:18}} onClick={()=>navigate('calendar')}><CalendarDays size={16}/> Открыть календарь</button>
-            </section>
-          </div>
-          <div className="aura-dashboard-grid" style={{marginTop:20}}>
-            {(['alice','alexa'] as ModelName[]).map(model=>{
-              const accent=model==='alice'?'#aa8cff':'#5dc8d9'
-              const modelRows=filtered
-              return <section key={model} style={{...panelStyle,borderTop:`3px solid ${accent}`}}>
-                <div className="aura-section-header"><h2 style={{margin:0,color:accent}}>{model==='alice'?'Alice':'Alexa'}</h2><button type="button" style={{...secondaryButton,padding:'8px 12px'}} onClick={()=>navigate('analytics')}>Подробнее</button></div>
-                <p style={subtitle}>Краткие показатели модели за выбранный период</p>
-                <div className="aura-dashboard-model-metrics"><div><small>Изменение баланса</small><strong>{money(modelRows.reduce((n,r)=>n+revenue(r,model),0))}</strong></div><div><small>Продажи</small><strong>{sum(modelRows,`${model}_sales` as keyof ReportRow)}</strong></div><div><small>Лиды</small><strong>{sum(modelRows,`${model}_leads` as keyof ReportRow)}</strong></div></div>
-              </section>
-            })}
-          </div>
-          <p style={{fontSize:12,color:'#78839b',marginTop:18}}>AURA v0.5 · Изменение баланса не обязательно равно выручке · Данные из Supabase</p>
-        </>}
-        {page === 'history' && <><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,marginBottom:16}}><span style={{color:colors.muted}}>Найдено: {filtered.length}</span><button type="button" onClick={exportCSV} style={secondaryButton}><Download size={16}/> Экспорт CSV</button></div>{renderRows(filtered)}</>}
-        {page === 'analytics' && <>
-          <section style={{...panelStyle,marginTop:20,marginBottom:20}}><h2 style={{margin:'0 0 8px'}}>Подробная аналитика моделей</h2><p style={subtitle}>Для каждой модели — собственные показатели и графики по сменам. Данные Alice и Alexa не смешиваются.</p></section>
-          <div className="aura-model-stack"><ModelAnalytics model="alice" rows={filtered} panelStyle={panelStyle} subtitleStyle={subtitle}/><ModelAnalytics model="alexa" rows={filtered} panelStyle={panelStyle} subtitleStyle={subtitle}/></div>
-        </>}
-        {page === 'team' && isLeader && <><h2>Сотрудники</h2><div className="aura-stats">{team.map(t => { const own = filtered.filter(r => r.staff_id === t.id); return <button key={t.id} type="button" onClick={() => {setPerson(t.id);setPage('history')}} style={{...panelStyle,textAlign:'left',color:colors.text,cursor:'pointer'}}><strong>{t.display_name}</strong><p style={subtitle}>{t.role === 'leader' ? 'Руководитель' : 'Чаттер'} · {own.length} смен</p><h2>{money(own.reduce((a,r) => a + revenue(r,'alice')+revenue(r,'alexa'),0))}</h2></button>})}</div><h2>Отчёты команды</h2>{renderRows(filtered)}</>}
-        {page === 'calendar' && <section style={{...panelStyle,width:'100%'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}><button type="button" style={secondaryButton} onClick={() => changeMonth(-1)}><ChevronLeft size={18}/></button><h2 style={{margin:0}}>{new Date(`${calendarMonth}-01T12:00:00`).toLocaleDateString('ru-RU',{month:'long',year:'numeric'})}</h2><button type="button" style={secondaryButton} onClick={() => changeMonth(1)}><ChevronRight size={18}/></button></div><div className="aura-calendar">{['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(d => <div key={d} style={{textAlign:'center',color:colors.muted,fontSize:12}}>{d}</div>)}{calendarCells().map((d,i) => { const dayReports = d ? (calendarReports?.get(d) ?? []) : []; return <button key={i} type="button" disabled={!d} onClick={() => {if (dayReports.length===1) editReport(dayReports[0]); else if (d) {setPeriod('all');setSearch(d);setPage('history')}}} style={{borderColor:dayReports.length ? colors.accent : colors.border}}>{d?.slice(-2)}{dayReports.length>0 && <div style={{fontSize:11,color:'#ad9bff',marginTop:6}}>{dayReports.length} отч.</div>}</button>})}</div><p style={{...subtitle,fontSize:12,marginTop:18}}>Нажми на день с отчётом, чтобы открыть его. Если отчётов несколько — откроется история.</p></section>}
-      </div>}
-      {page === 'report' && <div style={{width:'100%'}}> 
-        <div style={eyebrow}>Отчётность / {editing ? 'Редактирование' : 'Новый отчёт'}</div>
-        <h1 style={heading}>{editing ? 'Редактирование отчёта' : 'Новый отчёт'}</h1>
-        <p style={subtitle}>{editing ? `Сотрудник: ${nameOf(editing.staff_id)}. Изменения сохранятся в его отчёте.` : 'Заполни результаты своей смены для Alice и Alexa.'}</p>
-        <form ref={formRef} onSubmit={handleReport} className="aura-report" style={{marginTop:30}} onChange={() => setDirty(true)}>
-          <section style={panelStyle}><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}><CalendarDays size={19} color={colors.accent}/><h2 style={{margin:0,fontSize:19}}>Информация о смене</h2></div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:18}}><label style={{display:'grid',gap:9}}><span style={labelStyle}>Дата</span><input type="date" value={date} disabled={!!editing} onChange={e=>setDate(e.target.value)} required style={fieldStyle}/></label><label style={{display:'grid',gap:9}}><span style={labelStyle}>Смена</span><select value={shift} onChange={e=>setShift(e.target.value as Shift)} style={fieldStyle}>{(Object.keys(shiftLabels) as Shift[]).map(s => <option key={s} value={s}>{shiftLabels[s]}</option>)}</select></label></div><p style={{...subtitle,fontSize:12,marginTop:16}}>Отчёт от имени: {editing ? nameOf(editing.staff_id) : staff.display_name ?? email}</p></section>
-          {editing && <div><button type="button" style={secondaryButton} onClick={()=>void loadAudit(editing.id)}><Clock3 size={16}/> История изменений</button></div>}
-          {showAudit && editing && <section style={panelStyle}><div className="aura-section-header"><h2 style={{margin:0}}>История изменений</h2><button type="button" style={secondaryButton} onClick={()=>setShowAudit(false)}><X size={16}/> Закрыть</button></div>{auditError && <p style={{color:'#ffaaaa'}}>Журнал недоступен: {auditError}. Проверь SQL и RLS.</p>}{!auditError && !audit.length && <p style={subtitle}>Изменений пока нет.</p>}{audit.map(a=><div key={a.id} style={{borderTop:'1px solid #303449',padding:'14px 0'}}><strong>{new Date(a.changed_at).toLocaleString('ru-RU')}</strong><p style={subtitle}>Изменил: {a.changed_by ? nameOf(a.changed_by) : 'Система'}</p>{Object.keys(a.after_data ?? {}).filter(k=>a.before_data?.[k] !== a.after_data?.[k] && k !== 'updated_at').map(k=><div key={k} style={{fontSize:12,color:colors.muted,marginTop:6}}>{k}: {String(a.before_data?.[k] ?? '—')} → {String(a.after_data?.[k] ?? '—')}</div>)}</div>)}</section>}
-          <ProfileFields title="Alice" report={alice} onChange={setAlice}/><ProfileFields title="Alexa" report={alexa} onChange={setAlexa}/>
-          {(Number(alice.endingBalance) < Number(alice.startingBalance) || Number(alexa.endingBalance) < Number(alexa.startingBalance) || Number(alice.customers)>Number(alice.sales) || Number(alexa.customers)>Number(alexa.sales)) && <div style={{padding:16,borderRadius:10,background:'#3b2e23',color:'#ffd8a1'}}>Проверь показатели: есть снижение баланса или покупателей больше, чем продаж. Сохранение разрешено.</div>}
-          <div style={{display:'flex',justifyContent:'space-between',gap:14,flexWrap:'wrap'}}><button type="button" style={secondaryButton} onClick={()=>navigate(editing ? 'history':'dashboard')}><ArrowLeft size={17}/> Назад</button><button type="submit" disabled={saving} style={primaryButton}><ClipboardCheck size={18}/>{saving ? 'Сохраняем...' : editing ? 'Сохранить изменения' : 'Сохранить отчёт'}</button></div>
-          {message && <div role="status" style={{padding:16,borderRadius:10,background:'#26223b',color:'#c9bbff'}}>{message}</div>}
-          <p style={{fontSize:12,color:'#78839b'}}>Один отчёт на сотрудника за дату. При повторном сохранении потребуется подтверждение.</p>
-        </form>
-      </div>}
-    </main>
-  </div>
-}
-
-function AppStyles(): JSX.Element {
   return (
-    <style>{`
-    html, body, #root { width: 100% !important; min-width: 0 !important; min-height: 100% !important; margin: 0 !important; padding: 0 !important; max-width: none !important; background: ${colors.bg} !important; background-image: none !important; }
-    body { overflow-x: hidden; }
-    #root { display: block !important; }
-    * { box-sizing: border-box; }
-    button, input, select { font-family: inherit; }
-    button:hover { filter: brightness(1.09); }
-    button:disabled { opacity: .65; cursor: wait; }
-    .aura-layout { display: flex; width: 100%; min-height: 100vh; align-items: stretch; }
-    .aura-sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; width: 244px; flex: 0 0 244px; background: #161a25; border-right: 1px solid ${colors.border}; padding: 30px 20px 22px; display: flex; flex-direction: column; gap: 12px; }
-    .aura-content { flex: 1; min-width: 0; padding: 38px clamp(22px, 3vw, 55px) 80px; overflow: visible; }
-    .aura-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 18px; }
-    .aura-report { display: grid; gap: 22px; width: 100%; }
-    .aura-stats { display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:16px;margin:24px 0; }
-    .aura-table-wrap {overflow-x:auto;border:1px solid ${colors.border};border-radius:14px;}
-    .aura-table {width:100%;border-collapse:collapse;white-space:nowrap;text-align:left;font-size:13px;}
-    .aura-table th {padding:15px 16px;color:${colors.muted};background:#1b2030;font-weight:600;}
-    .aura-table td {padding:14px 16px;border-top:1px solid ${colors.border};}
-    .aura-table tr:hover td {background:#1b2030;}
-    .aura-calendar {display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;}
-    .aura-calendar button {min-height:66px;background:#10141f;border:1px solid ${colors.border};border-radius:9px;color:${colors.text};cursor:pointer;}
-    .aura-calendar button:disabled {opacity:.25;cursor:default;}
-    .aura-filter {display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:20px 0;}
-    .aura-filter select,.aura-filter input {width:auto;min-width:150px;}
+    <div className="aura-shell">
+      <aside className="sidebar">
+        <Brand />
+        <nav className="sidebar-nav" aria-label="Разделы приложения">
+          {navigation
+            .filter((item) => item.page !== 'team' || isLeader)
+            .map(({ page: target, label, icon: Icon }) => (
+              <button
+                key={target}
+                type="button"
+                className="nav-button"
+                aria-current={page === target ? 'page' : undefined}
+                aria-label={label}
+                title={label}
+                onClick={() => navigate(target)}
+              >
+                <Icon size={19} aria-hidden="true" />
+                <span>{label}</span>
+              </button>
+            ))}
+        </nav>
+        <div className="sidebar-account">
+          <span className="avatar" aria-hidden="true">
+            {personName.slice(0, 1).toUpperCase()}
+          </span>
+          <div className="account-label">
+            <strong title={personName}>{personName}</strong>
+            <span>{roleName}</span>
+          </div>
+          <button
+            type="button"
+            className="button button-quiet icon-button logout-button"
+            aria-label="Выйти"
+            title="Выйти"
+            onClick={handleLogout}
+          >
+            <LogOut size={18} aria-hidden="true" />
+            <span className="sr-only">Выйти</span>
+          </button>
+        </div>
+      </aside>
 
-    .aura-section-header {display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px;flex-wrap:wrap}
-    .aura-model-stack {display:grid;gap:24px;margin-top:22px}
-    .aura-dashboard-grid {display:grid;grid-template-columns:minmax(0,1.65fr) minmax(300px,1fr);gap:18px}
-    .aura-dashboard-grid > section {min-width:0}
-    .aura-dashboard-model-metrics {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}
-    .aura-dashboard-model-metrics > div {background:#111623;border:1px solid #2a3041;border-radius:10px;padding:14px;display:grid;gap:8px;min-width:0}
-    .aura-dashboard-model-metrics small {font-size:12px;color:#9ca7bf}
-    .aura-dashboard-model-metrics strong {font-size:20px;overflow-wrap:anywhere}
-    @media(max-width:1100px){.aura-dashboard-grid{grid-template-columns:1fr}}
-    @media(max-width:620px){.aura-dashboard-model-metrics{grid-template-columns:1fr}}
-    .aura-model-panel {min-width:0}
-    .aura-model-kpis {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:22px 0}
-    .aura-mini-stat {background:#111623;border:1px solid #2a3041;border-radius:12px;padding:16px;display:grid;gap:10px;min-width:0}
-    .aura-mini-stat small {color:#9ca7bf;font-size:12px}
-    .aura-mini-stat strong {font-size:23px;overflow-wrap:anywhere}
-    .aura-chart-block {padding:16px 0;border-top:1px solid #2a3041}
-    .aura-chart {width:100%;height:165px;display:block;margin:12px 0}
-    .aura-toast {position:fixed;right:24px;bottom:24px;z-index:20;background:#302849;border:1px solid #8b6cff;border-radius:12px;padding:14px 18px;max-width:380px;box-shadow:0 12px 30px #0008}
-    .aura-fields {grid-template-columns:repeat(5,minmax(0,1fr))}
-    @media (max-width:1200px) {.aura-model-kpis {grid-template-columns:repeat(2,minmax(0,1fr))}.aura-fields {grid-template-columns:repeat(3,minmax(0,1fr))}}
-    @media (max-width: 720px) { .aura-model-kpis {grid-template-columns:repeat(2,minmax(0,1fr))} .aura-fields {grid-template-columns:repeat(2,minmax(0,1fr))}  .aura-layout { flex-direction: column; } .aura-sidebar { position:relative;height:auto;width: 100%; flex: none; padding: 18px; gap: 8px; } .aura-sidebar-spacer { display: none; } .aura-content { padding: 26px 18px; } .aura-fields { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
-  `}</style>
+      <main className="workspace" ref={mainRef} tabIndex={-1} aria-label={title}>
+        {error && (
+          <p className="message message-error topology-message" role="alert">
+            {error}
+          </p>
+        )}
+        {dataError && (
+          <p className="message message-error topology-message" role="alert">
+            <CircleAlert size={18} aria-hidden="true" /> Ошибка загрузки: {dataError}
+          </p>
+        )}
+        {toast && (
+          <div className="toast">
+            <span role="status">
+              <Bell size={18} aria-hidden="true" />
+              {toast}
+            </span>
+            <button
+              type="button"
+              className="button button-quiet icon-button"
+              aria-label="Закрыть уведомление"
+              onClick={() => setToast('')}
+            >
+              <X size={17} aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
+        <SectionTransition sectionKey={page}>
+          <header className="page-header">
+            <div>
+              {page === 'dashboard' ? (
+                <p className="page-kicker">
+                  <span />
+                  {dateLabel(dateToday)}
+                </p>
+              ) : null}
+              <h1>{title}</h1>
+              {page === 'dashboard' && (
+                <p className="page-description">
+                  Здравствуйте, {personName}. <span className="role-pill">{roleName}</span>
+                </p>
+              )}
+            </div>
+            <div className="button-group">
+              {page === 'report' ? (
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => navigate(editing ? 'history' : 'dashboard')}
+                >
+                  <ArrowLeft size={17} aria-hidden="true" /> Назад
+                </button>
+              ) : (
+                <>
+                  <MotionButton
+                    type="button"
+                    className="button button-secondary icon-button"
+                    onClick={() => void refreshData(staff.role)}
+                    disabled={fetching}
+                    aria-label={fetching ? 'Загружаем данные' : 'Обновить'}
+                    title="Обновить"
+                  >
+                    <RefreshCw
+                      className={fetching ? 'is-spinning' : undefined}
+                      size={18}
+                      aria-hidden="true"
+                    />
+                  </MotionButton>
+                  <MotionButton
+                    type="button"
+                    className="button button-primary"
+                    onClick={openReport}
+                  >
+                    <FilePlus2 size={18} aria-hidden="true" /> Создать отчёт
+                  </MotionButton>
+                </>
+              )}
+            </div>
+          </header>
+          {fetching && (
+            <span className="sr-only" role="status">
+              Обновляем данные
+            </span>
+          )}
+
+          {page !== 'report' && (page !== 'calendar' || isLeader) && (
+            <div className="filters panel" role="group" aria-label="Фильтры">
+              <span className="filter-icon" aria-hidden="true">
+                <SlidersHorizontal size={18} />
+              </span>
+              {page !== 'calendar' && (
+                <label className="field filter-field">
+                  <span>Период</span>
+                  <select
+                    value={period}
+                    onChange={(event) => setPeriod(event.target.value as ReportPeriod)}
+                  >
+                    <option value="7">Последние 7 дней</option>
+                    <option value="30">Последние 30 дней</option>
+                    <option value="month">Текущий месяц</option>
+                    <option value="all">Всё время</option>
+                  </select>
+                </label>
+              )}
+              {isLeader && (
+                <label className="field filter-field">
+                  <span>Сотрудник</span>
+                  <select value={person} onChange={(event) => setPerson(event.target.value)}>
+                    <option value="all">Все сотрудники</option>
+                    {team.map((member) => (
+                      <option value={member.id} key={member.id}>
+                        {member.display_name || 'Сотрудник'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {detailedFilters && (
+                <>
+                  <label className="field filter-field">
+                    <span>Смена</span>
+                    <select
+                      value={filterShift}
+                      onChange={(event) => setFilterShift(event.target.value)}
+                    >
+                      <option value="all">Все смены</option>
+                      {(Object.keys(shiftNames) as Shift[]).map((value) => (
+                        <option key={value} value={value}>
+                          {shiftNames[value]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field filter-search">
+                    <span>Поиск</span>
+                    <input
+                      type="search"
+                      value={search}
+                      placeholder="Дата или имя"
+                      onChange={(event) => setSearch(event.target.value)}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+          )}
+
+          {(page === 'dashboard' || page === 'team') && (
+            <div className="kpi-grid" aria-label="Сводка за период">
+              {kpis.map(([label, value], index) => (
+                <MotionCard
+                  key={label}
+                  delay={index * 0.025}
+                  className={`panel kpi-card${index === 0 ? ' kpi-featured' : ''}`}
+                >
+                  <span>{label}</span>
+                  <strong className="number">{value}</strong>
+                </MotionCard>
+              ))}
+            </div>
+          )}
+
+          {page === 'dashboard' && (
+            <>
+              {draftFound && (
+                <MotionCard className="draft-banner panel">
+                  <div className="section-title">
+                    <span className="section-icon">
+                      <Save size={19} aria-hidden="true" />
+                    </span>
+                    <div>
+                      <h2>Незавершённый отчёт</h2>
+                      <p>Черновик сохранён на этом устройстве.</p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={restoreDraft} className="button button-secondary">
+                    Продолжить <ArrowRight size={17} aria-hidden="true" />
+                  </button>
+                </MotionCard>
+              )}
+              <div className="dashboard-grid">
+                <section className="panel table-panel" aria-labelledby="recent-reports">
+                  <div className="section-heading">
+                    <h2 id="recent-reports">Последние отчёты</h2>
+                    <button
+                      type="button"
+                      className="button button-quiet"
+                      onClick={() => navigate('history')}
+                    >
+                      Вся история <ArrowRight size={16} aria-hidden="true" />
+                    </button>
+                  </div>
+                  <ReportTable
+                    rows={filtered.slice(0, 5)}
+                    leader={isLeader}
+                    label="Последние отчёты"
+                    loading={fetching && !reports.length}
+                    nameOf={nameOf}
+                    onEdit={editReport}
+                  />
+                </section>
+                <MotionCard className="panel activity-panel" delay={0.08}>
+                  <div className="section-title">
+                    <span className="section-icon">
+                      <Activity size={18} aria-hidden="true" />
+                    </span>
+                    <h2>Сегодня</h2>
+                  </div>
+                  <strong className="activity-value number">{todayReports.length}</strong>
+                  <p className="muted">Отчётов за {dateLabel(dateToday)}</p>
+                  {isLeader &&
+                    (todaysStaff.length ? (
+                      <ul className="activity-list" aria-label="Сотрудники, сдавшие отчёт сегодня">
+                        {todaysStaff.map((id) => (
+                          <li key={id}>
+                            <span className="activity-dot" aria-hidden="true" />
+                            {nameOf(id)}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="muted">Сотрудники пока не сдавали отчёты.</p>
+                    ))}
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    onClick={() => navigate('calendar')}
+                  >
+                    Открыть календарь <ArrowRight size={16} aria-hidden="true" />
+                  </button>
+                </MotionCard>
+              </div>
+              <div className="model-summary-grid">
+                {(['alice', 'alexa'] as ModelName[]).map((model, index) => (
+                  <MotionCard
+                    key={model}
+                    reveal
+                    delay={index * 0.05}
+                    className={`panel model-summary model-${model}`}
+                  >
+                    <div className="section-heading">
+                      <h2>
+                        <span className="model-dot" />
+                        {model === 'alice' ? 'Alice' : 'Alexa'}
+                      </h2>
+                      <button
+                        type="button"
+                        className="button button-quiet"
+                        onClick={() => navigate('analytics')}
+                      >
+                        Аналитика <ArrowRight size={16} aria-hidden="true" />
+                      </button>
+                    </div>
+                    <dl>
+                      <div>
+                        <dt>Изменение баланса</dt>
+                        <dd>
+                          {money(filtered.reduce((total, row) => total + revenue(row, model), 0))}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Продажи</dt>
+                        <dd>{sum(filtered, `${model}_sales`)}</dd>
+                      </div>
+                      <div>
+                        <dt>Покупатели</dt>
+                        <dd>{sum(filtered, `${model}_customers`)}</dd>
+                      </div>
+                      <div>
+                        <dt>Лиды</dt>
+                        <dd>{sum(filtered, `${model}_leads`)}</dd>
+                      </div>
+                    </dl>
+                  </MotionCard>
+                ))}
+              </div>
+            </>
+          )}
+
+          {page === 'history' && (
+            <section className="panel table-panel" aria-labelledby="history-table-heading">
+              <div className="section-heading">
+                <div>
+                  <h2 id="history-table-heading">Отчёты</h2>
+                  <p className="muted number" aria-live="polite">
+                    Найдено: {filtered.length}
+                  </p>
+                </div>
+                <button type="button" className="button button-secondary" onClick={exportCSV}>
+                  <Download size={17} aria-hidden="true" /> Экспорт CSV
+                </button>
+              </div>
+              <ReportTable
+                key={reportTableKey}
+                rows={filtered}
+                leader={isLeader}
+                label="История отчётов"
+                loading={fetching && !reports.length}
+                paginate
+                nameOf={nameOf}
+                onEdit={editReport}
+              />
+            </section>
+          )}
+
+          {page === 'analytics' && (
+            <div className="analytics-stack">
+              <ModelAnalytics model="alice" rows={filtered} />
+              <ModelAnalytics model="alexa" rows={filtered} />
+            </div>
+          )}
+
+          {page === 'team' && isLeader && (
+            <>
+              <TeamDirectory
+                team={team}
+                rows={filtered}
+                onOpen={openMemberHistory}
+                onAnalyze={openMemberAnalytics}
+              />
+              <section className="panel table-panel" aria-labelledby="team-reports-heading">
+                <div className="section-heading">
+                  <h2 id="team-reports-heading">Отчёты команды</h2>
+                  <span className="muted number">{filtered.length}</span>
+                </div>
+                <ReportTable
+                  key={reportTableKey}
+                  rows={filtered}
+                  leader
+                  label="Отчёты команды"
+                  loading={fetching && !reports.length}
+                  paginate
+                  nameOf={nameOf}
+                  onEdit={editReport}
+                />
+              </section>
+            </>
+          )}
+
+          {page === 'calendar' && (
+            <div className="calendar-layout">
+              <section className="panel calendar-panel" aria-labelledby="calendar-month">
+                <div className="section-heading">
+                  <h2 id="calendar-month" aria-live="polite">
+                    {new Date(`${calendarMonth}-01T12:00:00`).toLocaleDateString('ru-RU', {
+                      month: 'long',
+                      year: 'numeric'
+                    })}
+                  </h2>
+                  <div className="button-group">
+                    <button
+                      type="button"
+                      className="button button-quiet icon-button"
+                      aria-label="Предыдущий месяц"
+                      onClick={() => changeMonth(-1)}
+                    >
+                      <ChevronLeft size={19} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-quiet icon-button"
+                      aria-label="Следующий месяц"
+                      onClick={() => changeMonth(1)}
+                    >
+                      <ChevronRight size={19} aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+                <div className="calendar-grid">
+                  {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day, index) => (
+                    <span
+                      className={index >= 5 ? 'weekend' : undefined}
+                      key={day}
+                      aria-hidden="true"
+                    >
+                      {day}
+                    </span>
+                  ))}
+                  {calendarCells().map((day, index) => {
+                    if (!day)
+                      return (
+                        <span className="calendar-gap" aria-hidden="true" key={`gap-${index}`} />
+                      )
+                    const count = calendarReports?.get(day)?.length ?? 0
+                    const date = new Date(`${day}T12:00:00`)
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        className={`calendar-day${index % 7 >= 5 ? ' weekend' : ''}`}
+                        aria-pressed={selectedDay === day}
+                        aria-current={day === dateToday ? 'date' : undefined}
+                        aria-label={`${date.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}, отчётов: ${count}`}
+                        onClick={() => setSelectedDay(day)}
+                      >
+                        <span className="number">{date.getDate()}</span>
+                        {count > 0 && (
+                          <small className="day-count">
+                            {count}
+                            <span> отч.</span>
+                          </small>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+              <MotionCard className="panel calendar-detail" delay={0.04}>
+                <div className="section-title">
+                  <span className="section-icon">
+                    <CalendarDays size={18} aria-hidden="true" />
+                  </span>
+                  <h2>{dateLabel(selectedDay)}</h2>
+                </div>
+                {!selectedReports.length ? (
+                  <p className="muted">За этот день отчётов нет.</p>
+                ) : (
+                  <>
+                    <p className="muted">
+                      Отчётов: <strong className="number">{selectedReports.length}</strong>
+                    </p>
+                    <ul className="calendar-detail-list">
+                      {selectedReports.slice(0, 4).map((row) => (
+                        <li key={row.id}>
+                          <span className="shift-pill">
+                            {shiftNames[row.shift_type] ?? row.shift_type}
+                          </span>
+                          {isLeader && <span>{nameOf(row.staff_id)}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                    {selectedReports.length === 1 ? (
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        onClick={() => editReport(selectedReports[0])}
+                      >
+                        Открыть отчёт <ArrowRight size={16} aria-hidden="true" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        onClick={openDayHistory}
+                      >
+                        Все отчёты дня <ArrowRight size={16} aria-hidden="true" />
+                      </button>
+                    )}
+                  </>
+                )}
+              </MotionCard>
+            </div>
+          )}
+
+          {page === 'report' && (
+            <form
+              ref={formRef}
+              onSubmit={handleReport}
+              className="report-form"
+              onChange={() => setDirty(true)}
+              aria-busy={saving}
+            >
+              <section className="panel form-panel" aria-labelledby="shift-information">
+                <div className="section-title">
+                  <span className="section-icon">
+                    <CalendarDays size={18} aria-hidden="true" />
+                  </span>
+                  <h2 id="shift-information">Информация о смене</h2>
+                </div>
+                <div className="shift-fields">
+                  <label className="field">
+                    <span>Дата</span>
+                    <input
+                      type="date"
+                      value={date}
+                      disabled={!!editing}
+                      onChange={(event) => setDate(event.target.value)}
+                      required
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Смена</span>
+                    <select
+                      value={shift}
+                      onChange={(event) => setShift(event.target.value as Shift)}
+                    >
+                      {(Object.keys(shiftNames) as Shift[]).map((value) => (
+                        <option key={value} value={value}>
+                          {shiftNames[value]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="form-meta">
+                  <p className="muted">
+                    <UserRound size={16} aria-hidden="true" />{' '}
+                    {editing ? nameOf(editing.staff_id) : personName}
+                  </p>
+                  {editing && (
+                    <button
+                      type="button"
+                      className="button button-quiet"
+                      onClick={() => void loadAudit(editing.id)}
+                      aria-haspopup="dialog"
+                    >
+                      <Clock3 size={17} aria-hidden="true" /> История изменений
+                    </button>
+                  )}
+                </div>
+              </section>
+              <ProfileFields model="alice" report={alice} onChange={setAlice} />
+              <ProfileFields model="alexa" report={alexa} onChange={setAlexa} />
+              {(Number(alice.endingBalance) < Number(alice.startingBalance) ||
+                Number(alexa.endingBalance) < Number(alexa.startingBalance) ||
+                Number(alice.customers) > Number(alice.sales) ||
+                Number(alexa.customers) > Number(alexa.sales)) && (
+                <p className="message message-warning" role="status">
+                  <CircleAlert size={18} aria-hidden="true" /> Проверьте показатели: баланс снизился
+                  или покупателей больше, чем продаж. Отчёт можно сохранить.
+                </p>
+              )}
+              {message && (
+                <p
+                  className={`message${message.startsWith('Ошибка:') ? ' message-error' : ''}`}
+                  role={message.startsWith('Ошибка:') ? 'alert' : 'status'}
+                >
+                  {message}
+                </p>
+              )}
+              <div className="form-footer">
+                <p className="muted">
+                  {dirty ? 'Есть несохранённые изменения.' : 'Один отчёт на сотрудника за дату.'}
+                </p>
+                <MotionButton type="submit" className="button button-primary" disabled={saving}>
+                  <ClipboardCheck size={18} aria-hidden="true" />{' '}
+                  {saving ? 'Сохраняем…' : editing ? 'Сохранить изменения' : 'Сохранить отчёт'}
+                </MotionButton>
+              </div>
+            </form>
+          )}
+        </SectionTransition>
+        <MotionDialog
+          open={page === 'report' && showAudit && !!editing}
+          title="История изменений"
+          onClose={closeAudit}
+        >
+          {auditLoading && (
+            <p role="status">
+              <span className="loading-dot" /> Загружаем историю…
+            </p>
+          )}
+          {auditError && (
+            <p className="message message-error" role="alert">
+              Журнал недоступен: {auditError}
+            </p>
+          )}
+          {!auditLoading && !auditError && !audit.length && (
+            <p className="muted">Изменений пока нет.</p>
+          )}
+          {audit.length > 0 && (
+            <ol className="audit-list">
+              {audit.map((entry) => (
+                <li key={entry.id}>
+                  <strong>{new Date(entry.changed_at).toLocaleString('ru-RU')}</strong>
+                  <p className="muted">
+                    Изменил: {entry.changed_by ? nameOf(entry.changed_by) : 'Система'}
+                  </p>
+                  <dl>
+                    {Object.keys(entry.after_data ?? {})
+                      .filter(
+                        (key) =>
+                          entry.before_data?.[key] !== entry.after_data?.[key] &&
+                          key !== 'updated_at'
+                      )
+                      .map((key) => (
+                        <div key={key}>
+                          <dt>{key}</dt>
+                          <dd>
+                            {String(entry.before_data?.[key] ?? '—')} →{' '}
+                            {String(entry.after_data?.[key] ?? '—')}
+                          </dd>
+                        </div>
+                      ))}
+                  </dl>
+                </li>
+              ))}
+            </ol>
+          )}
+        </MotionDialog>
+      </main>
+    </div>
   )
 }
-
-const navButton: CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '13px 14px', border: 0, borderRadius: 10, background: 'transparent', color: '#abb5ca', textAlign: 'left', fontSize: 14, cursor: 'pointer' }
-const centerStyle: CSSProperties = { minHeight: '100vh', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: colors.bg, color: colors.text, fontFamily: 'Inter, Segoe UI, Arial, sans-serif' }
-const eyebrow: CSSProperties = { color: '#ad9bff', fontSize: 13, fontWeight: 650, marginBottom: 10 }
-const heading: CSSProperties = { fontSize: 'clamp(26px, 3vw, 38px)', lineHeight: 1.2, letterSpacing: -0.8, margin: '0 0 10px' }
-const subtitle: CSSProperties = { color: colors.muted, lineHeight: 1.6, margin: 0, fontSize: 15 }
-const labelStyle: CSSProperties = { color: '#b5bfd5', fontSize: 13 }

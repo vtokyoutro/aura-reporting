@@ -1,11 +1,18 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type -- Native Node test in JavaScript. */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
 
 const workspace = new URL('../src/renderer/src/', import.meta.url)
+const motionComponents = {
+  MotionProvider: 'fragment',
+  SectionTransition: 'section',
+  MotionCard: 'section',
+  MotionButton: 'button',
+  MotionDialog: 'dialog'
+}
 const syntheticDraft = JSON.stringify({
   date: '2026-11-17',
   shift: 'day',
@@ -46,9 +53,20 @@ function form(node) {
 function button(node, label) {
   return find(node, (element) => {
     if (element.type !== 'button') return false
+    if (element.props['aria-label'] === label) return true
     const children = [element.props.children].flat()
     return children.some((child) => typeof child === 'string' && child.trim() === label)
   })
+}
+
+function field(node, label) {
+  const wrapper = find(
+    node,
+    (element) =>
+      element.type === 'label' &&
+      Boolean(find(element, (child) => child.type === 'span' && child.props.children === label))
+  )
+  return find(wrapper, (element) => element.type === 'input' || element.type === 'select')
 }
 
 // Execute the app's handlers and effects with synchronous hook state and synthetic events.
@@ -125,6 +143,8 @@ function setup() {
   const attempts = []
   const draftReads = []
   const storage = new Map()
+  const downloads = []
+  const downloadUrls = new Map()
   const initialSession = deferred()
   const loginResult = deferred()
   const windowEvents = new EventTarget()
@@ -218,9 +238,11 @@ function setup() {
     'lucide-react': new Proxy({}, { get: (_target, name) => name }),
     './lib/supabase': { supabase: client }
   }
+  const modules = new Map()
 
   function loadModule(path) {
-    const { outputText } = ts.transpileModule(readFileSync(new URL(path, workspace), 'utf8'), {
+    if (modules.has(path.href)) return modules.get(path.href)
+    const { outputText } = ts.transpileModule(readFileSync(path, 'utf8'), {
       compilerOptions: {
         module: ts.ModuleKind.CommonJS,
         jsx: ts.JsxEmit.ReactJSX,
@@ -231,17 +253,40 @@ function setup() {
     runInNewContext(outputText, {
       exports,
       require(name) {
-        if (name === './lib/report-data') return loadModule('lib/report-data.ts')
-        if (name === './lib/report-view' || name === '../lib/report-view') {
-          return loadModule('lib/report-view.ts')
-        }
-        if (name === './components/ModelAnalytics')
-          return loadModule('components/ModelAnalytics.tsx')
-        assert.ok(Object.hasOwn(dependencies, name), 'Unexpected test import: ' + name)
-        return dependencies[name]
+        if (Object.hasOwn(dependencies, name)) return dependencies[name]
+        assert.ok(name.startsWith('.'), 'Unexpected test import: ' + name)
+        const url = new URL(name, path)
+        assert.ok(url.href.startsWith(workspace.href), 'Import outside test workspace: ' + name)
+        if (url.pathname.endsWith('.css')) return {}
+        if (url.pathname.endsWith('/lib/supabase')) return dependencies['./lib/supabase']
+        if (url.pathname.endsWith('/components/WorkspaceMotion')) return motionComponents
+        const module = [url, new URL(url.href + '.tsx'), new URL(url.href + '.ts')].find(
+          (candidate) => existsSync(candidate)
+        )
+        assert.ok(module, 'Missing test import: ' + name)
+        return loadModule(module)
       },
       AbortController,
       AbortSignal,
+      Blob,
+      URL: {
+        createObjectURL(blob) {
+          const url = 'blob:synthetic-' + downloadUrls.size
+          downloadUrls.set(url, blob)
+          return url
+        },
+        revokeObjectURL: (url) => downloadUrls.delete(url)
+      },
+      document: {
+        createElement(tag) {
+          assert.equal(tag, 'a')
+          return {
+            click() {
+              downloads.push({ name: this.download, blob: downloadUrls.get(this.href) })
+            }
+          }
+        }
+      },
       FormData: class {
         constructor(fields) {
           this.fields = fields
@@ -264,16 +309,18 @@ function setup() {
         removeEventListener: windowEvents.removeEventListener.bind(windowEvents)
       }
     })
+    modules.set(path.href, exports)
     return exports
   }
 
-  const { default: App } = loadModule('App.tsx')
+  const { default: App } = loadModule(new URL('App.tsx', workspace))
   const app = () => harness.render('app', { type: App, props: {} })
   app()
 
   return {
     app,
     attempts,
+    downloads,
     draftReads,
     initialSession,
     loginResult,
@@ -318,6 +365,176 @@ async function startProfile(app, userId, role) {
 function submitEvent(email = '') {
   return { currentTarget: { email }, preventDefault: () => undefined }
 }
+
+function syntheticReports(staffId, count) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: 'report-' + String(index + 1).padStart(3, '0'),
+    staff_id: staffId,
+    report_date: index === 0 ? '2025-10-31' : '2025-11-01',
+    shift_type: 'day'
+  }))
+}
+
+function reportTable(app, tree) {
+  return app.render(named(tree, 'ReportTable'))
+}
+
+function tableRows(tree) {
+  const body = find(tree, (element) => element.type === 'tbody')
+  assert.ok(body, 'Expected a report table')
+  return [body.props.children].flat().filter((element) => element?.type === 'tr')
+}
+
+test('paginates filtered history while exporting every matching report', async () => {
+  const app = setup()
+  const reports = syntheticReports('chatter', 51)
+  const { workspaceElement, dataRequests } = await startProfile(app, 'chatter', 'chatter')
+  dataRequests[0].complete(reports)
+  await turn()
+  app.requests.at(-1).complete([])
+  await turn()
+
+  const screen = () => app.render(workspaceElement)
+  let focuses = 0
+  const landmark = find(screen(), (element) => element.type === 'main')
+  assert.equal(landmark.props.tabIndex, -1)
+  landmark.props.ref.current = {
+    focus() {
+      focuses += 1
+    }
+  }
+  button(screen(), 'История отчётов').props.onClick()
+  field(screen(), 'Период').props.onChange({
+    target: { value: 'all' }
+  })
+
+  const table = () => reportTable(app, screen())
+  const paging = (table, label) => button(app.render(named(table, 'Pagination')), label)
+  const previous = 'Предыдущая страница отчётов'
+  const next = 'Следующая страница отчётов'
+  const firstPage = table()
+  assert.equal(focuses, 1)
+  assert.equal(tableRows(firstPage).length, 25)
+  assert.equal(paging(firstPage, previous).props.disabled, true)
+  paging(firstPage, next).props.onClick()
+
+  const secondPage = table()
+  assert.equal(tableRows(secondPage).length, 25)
+  const pageIds = [...tableRows(firstPage), ...tableRows(secondPage)].map((row) => row.key)
+  assert.equal(new Set(pageIds).size, 50)
+  paging(secondPage, next).props.onClick()
+
+  const lastPage = table()
+  assert.equal(tableRows(lastPage).length, 1)
+  assert.equal(paging(lastPage, next).props.disabled, true)
+  assert.ok(!pageIds.includes(tableRows(lastPage)[0].key))
+
+  button(screen(), 'Экспорт CSV').props.onClick()
+  assert.equal(app.downloads.length, 1)
+  const download = app.downloads[0]
+  assert.equal(download.name, 'AURA_reports.csv')
+  assert.equal((await download.blob.text()).split('\r\n').length, reports.length + 1)
+
+  field(screen(), 'Поиск').props.onChange({
+    target: { value: '2025-11-01' }
+  })
+  const filteredPage = table()
+  assert.equal(tableRows(filteredPage).length, 25)
+  assert.equal(paging(filteredPage, previous).props.disabled, true)
+  assert.equal(focuses, 1)
+  button(screen(), 'Экспорт CSV').props.onClick()
+  assert.equal((await app.downloads[1].blob.text()).split('\r\n').length, reports.length)
+
+  field(screen(), 'Поиск').props.onChange({
+    target: { value: 'nonexistent' }
+  })
+  const emptyPage = table()
+  assert.ok(find(emptyPage, (element) => element.props.role === 'status'))
+  assert.equal(named(emptyPage, 'Pagination'), undefined)
+  app.dispose()
+})
+
+test('gates team navigation by role and follows the last selected section', async () => {
+  const app = setup()
+  const leader = await startProfile(app, 'lead', 'leader')
+  const staff = Array.from({ length: 13 }, (_, index) => {
+    const number = String(index + 1).padStart(2, '0')
+    return { id: 'employee-' + number, display_name: 'Employee ' + number, role: 'chatter' }
+  })
+  for (const request of leader.dataRequests) {
+    request.complete(request.table === 'staff' ? staff : [])
+  }
+  await turn()
+  app.requests.at(-1).complete([])
+  await turn()
+
+  const screen = () => app.render(leader.workspaceElement)
+  button(screen(), 'Команда').props.onClick()
+  const directory = () => app.render(named(screen(), 'TeamDirectory'))
+  const firstTeamPage = directory()
+  assert.ok(button(firstTeamPage, 'Отчёты сотрудника Employee 01'))
+  assert.equal(button(firstTeamPage, 'Отчёты сотрудника Employee 13'), undefined)
+  const teamPaging = app.render(named(firstTeamPage, 'Pagination'))
+  button(teamPaging, 'Следующая страница сотрудников').props.onClick()
+  button(directory(), 'Отчёты сотрудника Employee 13').props.onClick()
+  const employeeFilter = field(screen(), 'Сотрудник')
+  assert.equal(employeeFilter.props.value, 'employee-13')
+  assert.ok(button(screen(), 'Экспорт CSV'))
+
+  button(screen(), 'История отчётов').props.onClick()
+  button(screen(), 'Календарь').props.onClick()
+  button(screen(), 'Аналитика').props.onClick()
+  assert.ok(named(screen(), 'ModelAnalytics'))
+  assert.equal(button(screen(), 'Аналитика').props['aria-current'], 'page')
+  assert.equal(button(screen(), 'Календарь').props['aria-current'], undefined)
+  assert.equal(button(screen(), 'Экспорт CSV'), undefined)
+
+  app.emit('SIGNED_OUT')
+  assert.ok(named(app.app(), 'LoginForm'))
+  assert.equal(named(app.app(), 'Workspace'), undefined)
+  const chatter = await startProfile(app, 'chatter', 'chatter')
+  chatter.dataRequests[0].complete([])
+  await turn()
+  assert.equal(button(app.render(chatter.workspaceElement), 'Команда'), undefined)
+  assert.equal(named(app.render(chatter.workspaceElement), 'ModelAnalytics'), undefined)
+  app.dispose()
+})
+
+test('opens all reports of a calendar day despite a previous history shift filter', async () => {
+  const app = setup()
+  const now = new Date()
+  const selectedDate = [
+    String(now.getFullYear()),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0')
+  ].join('-')
+  const reports = syntheticReports('lead', 2).map((report, index) => ({
+    ...report,
+    report_date: selectedDate,
+    staff_id: index === 0 ? 'lead' : 'employee',
+    shift_type: index === 0 ? 'day' : 'night'
+  }))
+  const { workspaceElement, dataRequests } = await startProfile(app, 'lead', 'leader')
+  for (const request of dataRequests) {
+    request.complete(request.table === 'shift_reports' ? reports : [])
+  }
+  await turn()
+  app.requests.at(-1).complete([])
+  await turn()
+
+  const screen = () => app.render(workspaceElement)
+  button(screen(), 'История отчётов').props.onClick()
+  field(screen(), 'Смена').props.onChange({ target: { value: 'morning' } })
+  button(screen(), 'Календарь').props.onClick()
+  button(screen(), 'Все отчёты дня').props.onClick()
+  assert.equal(field(screen(), 'Смена').props.value, 'all')
+  assert.equal(field(screen(), 'Поиск').props.value, selectedDate)
+  assert.deepEqual(
+    tableRows(reportTable(app, screen())).map((row) => row.key),
+    reports.map((row) => row.id)
+  )
+  app.dispose()
+})
 
 test('clears the password before sign-in completes and prevents duplicate submission', async () => {
   const app = setup()
@@ -402,6 +619,28 @@ async function reportForm(app, userId) {
   button(app.render(workspaceElement), 'Продолжить').props.onClick()
   return form(app.render(workspaceElement))
 }
+
+test('keeps a restored report open when navigation is cancelled', async () => {
+  const app = setup()
+  await reportForm(app, 'chatter')
+  const workspaceElement = named(app.app(), 'Workspace')
+  const screen = () => app.render(workspaceElement)
+  let prompts = 0
+  app.prepareConfirmation(() => {
+    prompts += 1
+    return false
+  })
+  button(screen(), 'История отчётов').props.onClick()
+  assert.ok(form(screen()))
+  assert.equal(prompts, 1)
+
+  app.prepareConfirmation(() => true)
+  button(screen(), 'История отчётов').props.onClick()
+  assert.equal(form(screen()), undefined)
+  assert.ok(button(screen(), 'Экспорт CSV'))
+  assert.equal(app.storage.get('aura-draft-v05-chatter'), syntheticDraft)
+  app.dispose()
+})
 
 test('does not write when sign-out interrupts saving or report replacement is declined', async () => {
   const app = setup()
